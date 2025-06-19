@@ -1,0 +1,12 @@
+[
+  {
+    "username": "adi",
+    "password": "$2b$10$89yNLKHU3WnddYTrtKsxDe0vsBDygYGV11pYlS1nHhsMp3Afrh.O6",
+    "type": "citizen"
+  },
+  {
+    "username": "lior",
+    "password": "$2b$10$NDh2.3XSzoIDn/wM5ZEhuOpiuPi.JOR21Hf8Lg4.NQGqN/orR7mCa",
+    "type": "employee"
+  }
+]
