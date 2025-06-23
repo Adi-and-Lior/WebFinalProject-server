@@ -207,7 +207,7 @@ initializeUsers().then(() => {
                     return res.status(500).json({ message: 'Failed to save report.' });
                 }
                 console.log('Report saved successfully.');
-                res.status(200).json({ message: 'Report submitted successfully!', reportId: newReportId });
+                res.status(200).json({ message: 'Report submitted successfully!', reportId: newReportId , mediaFileNameOnServer: uploadedFile ? uploadedFile.filename : null });
             });
         });
     });
