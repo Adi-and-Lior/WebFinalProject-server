@@ -270,7 +270,7 @@ app.get('/html/:pageName', (req, res) => {
 
 // --- הפעלת השרת ---
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running. External URL: ${process.env.RENDER_EXTERNAL_URL || 'N/A'}`);
     console.log(`CORS_ORIGIN set to: ${process.env.CORS_ORIGIN || '*'}`);
     if (process.env.MONGO_URL) {
         console.log('MongoDB URL is set (connecting to external DB).');
