@@ -16,8 +16,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // *** חיבור ל-MongoDB באמצעות Mongoose ***
-mongoose.connect(process.env.MONGO_URL)
-.then(() => {console.log('Connected to MongoDB database.'); console.log('DB Name:', mongoose.connection.name);})
+mongoose.connect(process.env.MONGO_URL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+})
+.then(() => console.log('Connected to MongoDB database.'))
 .catch(err => {
     console.error('MongoDB connection failed:', err.message);
     process.exit(1); // יציאה מהאפליקציה אם החיבור נכשל
@@ -29,10 +32,10 @@ mongoose.connect(process.env.MONGO_URL)
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    userType: { type: String, required: true },
+    userType: { type: String, required: true }, // 'citizen' or 'employee'
+    numericId: { type: String, required: true, unique: true }, // ID מספרי שנוצר ידנית
     createdAt: { type: Date, default: Date.now }
 });
-
 
 const User = mongoose.model('User', userSchema);
 
@@ -51,8 +54,8 @@ const reportSchema = new mongoose.Schema({
     media: { type: String }, // שם הקובץ שהועלה (נשמר אפמרית)
     timestamp: { type: Date, default: Date.now },
     createdBy: { type: String },
-    creatorId: { type: String, required: true },
-    status: { type: String, default: 'pending' } // 'pending', 'in-progress', 'completed'
+    creatorId: { type: String, required: true }, // ה-numericId של יוצר הדיווח
+    status: { type: String, default: 'in-progress' }
 });
 
 const Report = mongoose.model('Report', reportSchema);
@@ -108,7 +111,7 @@ app.post('/api/login', async (req, res) => { // *** שינוי: נוסף /api **
                 user: {
                     username: foundUser.username,
                     userType: foundUser.userType,
-                    userId: foundUser._id 
+                    userId: foundUser.numericId // החזר את ה-numericId ששמרנו
                 }
             });
         } else {
@@ -133,16 +136,20 @@ app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        
+        // יצירת ID מספרי ייחודי למשתמש חדש
+        const newNumericId = Date.now().toString() + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
 
         const newUser = new User({
             username,
             password: hashedPassword,
-            userType
+            userType,
+            numericId: newNumericId
         });
 
         await newUser.save(); // שמירה ל-MongoDB
-
-        res.status(201).json({ user: { username, userType, userId: newUser._id } });
+        console.log(`New user registered: ${username} (${userType}) with Numeric ID: ${newNumericId}`);
+        res.status(201).json({ user: { username, userType, userId: newNumericId } });
 
     } catch (error) {
         console.error('Error registering new user:', error.message);
@@ -153,9 +160,9 @@ app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api
 // נקודת קצה לקבלת רשימת משתמשים (ללא סיסמאות)
 app.get('/api/users', async (req, res) => { // *** שינוי: נוסף /api ***
     try {
-        const users = await User.find({}, 'username userType _id');
+        const users = await User.find({}, 'username userType numericId -_id'); // דוגמה: החזר רק שדות אלה
         const publicUsers = users.map(user => ({
-            id: user._id, 
+            id: user.numericId, // השתמש ב-numericId
             username: user.username,
             userType: user.userType
         }));
