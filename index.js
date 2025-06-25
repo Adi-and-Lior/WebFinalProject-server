@@ -32,7 +32,7 @@ mongoose.connect(process.env.MONGO_URL, {
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    userType: { type: String, required: true }, // 'citizen' or 'employee'
+    userType: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -53,7 +53,7 @@ const reportSchema = new mongoose.Schema({
     media: { type: String }, // שם הקובץ שהועלה (נשמר אפמרית)
     timestamp: { type: Date, default: Date.now },
     createdBy: { type: String },
-    creatorId: { type: String, required: true },
+    creatorId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' }, 
     status: { type: String, default: 'in-progress' }
 });
 
@@ -95,7 +95,7 @@ app.post('/api/login', async (req, res) => { // *** שינוי: נוסף /api **
 
     try {
         const foundUser = await User.findOne({ username: username, userType: userType });
-
+        console.log('Found user object:', foundUser);
         if (!foundUser) {
             console.log('Login failed: User not found or type mismatch.');
             return res.status(401).json({ error: 'שם משתמש או סיסמה שגויים.' });
@@ -105,18 +105,12 @@ app.post('/api/login', async (req, res) => { // *** שינוי: נוסף /api **
 
         if (passwordMatch) {
             console.log('Login successful.');
-             console.log('User object about to be sent from backend:', {
-        username: foundUser.username,
-        userType: foundUser.userType,
-        _id: foundUser._id // בדוק מה יש כאן!
-    });
-
             res.status(200).json({
                 message: 'Login successful',
                 user: {
                     username: foundUser.username,
                     userType: foundUser.userType,
-                    _Id: foundUser._id
+                    userId: foundUser._id
                 }
             });
         } else {
@@ -142,16 +136,15 @@ app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
+
         const newUser = new User({
             username,
             password: hashedPassword,
-            userType
+            userType,
         });
 
         await newUser.save(); // שמירה ל-MongoDB
-        const newUserIdAsString = newUser._id.toString();
-        console.log(`New user registered: ${username} (${userType}) with Numeric ID: ${user._Id}`);
-        res.status(201).json({ user: { username, userType, _Id } });
+        console.log(`New user registered: ${username} (${userType}) with ID: ${newUser._id}`);        res.status(201).json({ user: { username, userType, userId:newUser._id } });
 
     } catch (error) {
         console.error('Error registering new user:', error.message);
@@ -162,9 +155,9 @@ app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api
 // נקודת קצה לקבלת רשימת משתמשים (ללא סיסמאות)
 app.get('/api/users', async (req, res) => { // *** שינוי: נוסף /api ***
     try {
-        const users = await User.find({}, 'username userType numericId -_id'); // דוגמה: החזר רק שדות אלה
+        const users = await User.find({}, 'username userType _id'); 
         const publicUsers = users.map(user => ({
-            userId: user._id,
+            id: user._id.toString(), // השתמש ב-numericId
             username: user.username,
             userType: user.userType
         }));
