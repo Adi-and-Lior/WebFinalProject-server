@@ -54,7 +54,8 @@ const reportSchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now },
     createdBy: { type: String },
     creatorId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' }, 
-    status: { type: String, default: 'in-progress' }
+    status: { type: String, default: 'in-progress' },
+    municipalityResponse: { type: String, default: null } 
 });
 
 const Report = mongoose.model('Report', reportSchema);
@@ -157,7 +158,7 @@ app.get('/api/users', async (req, res) => { // *** שינוי: נוסף /api ***
     try {
         const users = await User.find({}, 'username userType _id'); 
         const publicUsers = users.map(user => ({
-            id: user._id.toString(), // השתמש ב-numericId
+            id: user._id.toString(), 
             username: user.username,
             userType: user.userType
         }));
@@ -203,7 +204,7 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
             timestamp: Date.now(),
             createdBy: createdBy,
             creatorId: creatorId,
-            status: 'pending'
+            status: 'in-progress'
         });
 
         await newReport.save(); // שמירה ל-MongoDB
@@ -216,6 +217,43 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
     } catch (err) {
         console.error('Error saving report to MongoDB:', err.message);
         res.status(500).json({ message: 'Failed to save report.' });
+    }
+});
+
+// --- נקודת קצה לקבלת דיווח בודד לפי ID ---
+app.get('/api/reports/:id', async (req, res) => {
+    try {
+        const { id } = req.params; // קבל את ה-ID מפרמטרי ה-URL
+        const report = await Report.findById(id); // חפש את הדיווח לפי ID ב-MongoDB
+
+        if (!report) {
+            // אם הדיווח לא נמצא, החזר שגיאת 404
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        // אם הדיווח נמצא, החזר אותו בפורמט JSON
+        const formattedReport = {
+            id: report._id,
+            faultType: report.faultType,
+            description: report.faultDescription, // שינוי שם: ב-HTML השתמשת ב-displayDescription
+            location: report.location,
+            media: report.media,
+            timestamp: report.timestamp ? report.timestamp.toISOString() : null,
+            createdBy: report.createdBy,
+            creatorId: report.creatorId,
+            status: report.status,
+            municipalityResponse: report.municipalityResponse || null // ודא ששדה זה קיים בסכימה או הוסף אותו
+        };
+
+        res.json(formattedReport);
+
+    } catch (e) {
+        console.error(`Error fetching report with ID ${req.params.id} from MongoDB:`, e.message);
+        // אם ה-ID אינו תקין (למשל, לא פורמט ObjectId), Mongoose יזרוק שגיאה
+        if (e.name === 'CastError') {
+            return res.status(400).json({ message: 'Invalid Report ID format.' });
+        }
+        res.status(500).json({ message: 'Failed to load report details.' });
     }
 });
 
@@ -246,6 +284,7 @@ app.get('/api/reports', async (req, res) => {
         res.status(500).json({ message: 'Failed to load reports.' });
     }
 });
+
 
 // --- הגשת קבצים סטטיים ---
 app.use(express.static(path.join(__dirname, '..', 'client')));
