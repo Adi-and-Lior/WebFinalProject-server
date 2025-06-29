@@ -1,292 +1,264 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const bcrypt = require('bcrypt');
-const fs = require('fs');
-const multer = require('multer');
+const express  = require('express');
+const cors     = require('cors');
+const path     = require('path');
+const bcrypt   = require('bcrypt');
+const fs       = require('fs');
+const multer   = require('multer');
 const mongoose = require('mongoose');
+
 if (process.env.NODE_ENV !== 'production') {
-    require('dotenv').config();
+  require('dotenv').config();
 }
-const app = express();
+
+const app  = express();
 const PORT = process.env.PORT || 3000;
-mongoose.connect(process.env.MONGO_URL)
-.then(() => console.log('Connected to MongoDB database.'))
-.catch(err => {
+
+/* ---------- MongoDB ---------- */
+mongoose
+  .connect(process.env.MONGO_URL)
+  .then(() => console.log('Connected to MongoDB database.'))
+  .catch(err => {
     console.error('MongoDB connection failed:', err.message);
     process.exit(1);
-});
+  });
+
+/* ---------- Schemas ---------- */
 const userSchema = new mongoose.Schema({
-  username:  { type: String, required: true, unique: true },
-  password:  { type: String, required: true },
-  userType:  { type: String, required: true },
-  city: {
-    type: String,
+  username : { type: String, required: true, unique: true },
+  password : { type: String, required: true },
+  userType : { type: String, required: true },
+  city     : {
+    type    : String,
     required() {
-      // חובה רק אם userType הוא 'employee' (לא משנה אותיות)
       return (this.userType || '').toLowerCase() === 'employee';
     }
   },
   createdAt: { type: Date, default: Date.now }
 });
 const User = mongoose.model('User', userSchema);
+
 const reportSchema = new mongoose.Schema({
-    faultType: { type: String, required: true },
-    faultDescription: { type: String },
-    location: { 
-        type: { type: String, required: true }, 
-        city: { type: String, required: true }, 
-        street: { type: String },
-        houseNumber: { type: String },
-        latitude: { type: Number },
-        longitude: { type: Number }
-    },
-    media: { type: String }, 
-    timestamp: { type: Date, default: Date.now },
-    createdBy: { type: String },
-    creatorId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' }, 
-    status: { type: String, default: 'in-progress' },
-    municipalityResponse: { type: String, default: null } 
+  faultType           : { type: String, required: true },
+  faultDescription    : { type: String },
+  location            : {
+    type       : { type: String, required: true },
+    city       : { type: String, required: true },
+    street     : { type: String },
+    houseNumber: { type: String },
+    latitude   : { type: Number },
+    longitude  : { type: Number }
+  },
+  media               : { type: String },
+  timestamp           : { type: Date, default: Date.now },
+  createdBy           : { type: String },
+  creatorId           : { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
+  status              : { type: String, default: 'in-progress' },
+  municipalityResponse: { type: String, default: null }
 });
 const Report = mongoose.model('Report', reportSchema);
-app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+
+/* ---------- Middleware ---------- */
+app.use(
+  cors({
+    origin        : process.env.CORS_ORIGIN || '*',
+    methods       : ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+/* ---------- File uploads ---------- */
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
-    console.log(`Created uploads directory at: ${uploadDir}`);
+  fs.mkdirSync(uploadDir);
+  console.log(`Created uploads directory at: ${uploadDir}`);
 }
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, uploadDir);
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + '-' + file.originalname);
-    }
+  destination: (_, __, cb) => cb(null, uploadDir),
+  filename  : (_, file, cb) => cb(null, Date.now() + '-' + file.originalname)
 });
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
+
+/* ---------- Auth routes ---------- */
 app.post('/api/login', async (req, res) => {
-    const { username, password, userType } = req.body;
-    try {
-        const foundUser = await User.findOne({ username: username, userType: userType });
-        console.log('Found user object:', foundUser);
-        if (!foundUser) {
-            console.log('Login failed: User not found or type mismatch.');
-            return res.status(401).json({ error: 'שם משתמש או סיסמה שגויים.' });
-        }
-        const passwordMatch = await bcrypt.compare(password, foundUser.password);
-        if (passwordMatch) {
-            console.log('Login successful.');
-            res.status(200).json({
-                message: 'Login successful',
-                user: {
-                    username: foundUser.username,
-                    userType: foundUser.userType,
-                    userId: foundUser._id,
-                    city: foundUser.city // <--- חדש: החזר את עיר המשתמש בלוגין
-                }
-            });
-        } else {
-            console.log('Login failed: Password mismatch.');
-            res.status(401).json({ error: 'שם משתמש או סיסמה שגויים.' });
-        }
-    } catch (err) {
-        console.error('Error during login:', err.message);
-        res.status(500).json({ error: 'שגיאת שרת פנימית.' });
+  const { username, password, userType } = req.body;
+  try {
+    const foundUser = await User.findOne({ username, userType });
+    if (!foundUser) {
+      return res.status(401).json({ error: 'שם משתמש או סיסמה שגויים.' });
     }
+    const ok = await bcrypt.compare(password, foundUser.password);
+    if (!ok) {
+      return res.status(401).json({ error: 'שם משתמש או סיסמה שגויים.' });
+    }
+    res.json({
+      message: 'Login successful',
+      user   : {
+        username: foundUser.username,
+        userType: foundUser.userType,
+        userId  : foundUser._id,
+        city    : foundUser.city
+      }
+    });
+  } catch (err) {
+    console.error('Error during login:', err.message);
+    res.status(500).json({ error: 'שגיאת שרת פנימית.' });
+  }
 });
+
 app.post('/api/register', async (req, res) => {
-    const { username, password, userType, city } = req.body;
-    try {
-        const existingUser = await User.findOne({ username: username, userType: userType });
-        if (existingUser) {
-            return res.status(409).json({ error: 'משתמש עם שם משתמש וסוג זה כבר קיים.' });
-        }
-        const hashedPassword = await bcrypt.hash(password, 10);       
-        const newUser = new User({
-            username,
-            password: hashedPassword,
-            userType,
-            city, 
-        });
-        await newUser.save(); 
-        console.log(`New user registered: ${username} (${userType}, City: ${city}) with ID: ${newUser._id}`);
-        res.status(201).json({ user: { username, userType, userId:newUser._id, city: newUser.city } }); // <--- חדש: החזר את העיר גם ברישום
-    } catch (error) {
-        console.error('Error registering new user:', error.message);
-        res.status(500).json({ error: 'שגיאה בעת הרשמת משתמש חדש.' });
+  const { username, password, userType, city } = req.body;
+  try {
+    if (await User.findOne({ username, userType })) {
+      return res.status(409).json({ error: 'משתמש עם שם משתמש וסוג זה כבר קיים.' });
     }
+    const hashed = await bcrypt.hash(password, 10);
+    const newUser = await new User({ username, password: hashed, userType, city }).save();
+    res.status(201).json({
+      user: { username, userType, userId: newUser._id, city: newUser.city }
+    });
+  } catch (err) {
+    console.error('Error registering new user:', err.message);
+    res.status(500).json({ error: 'שגיאה בעת הרשמת משתמש חדש.' });
+  }
 });
-app.get('/api/users', async (req, res) => {
-    try {
-        const users = await User.find({}, 'username userType _id city'); // <--- חדש: הוסף city לשליפה
-        const publicUsers = users.map(user => ({
-            id: user._id.toString(), 
-            username: user.username,
-            userType: user.userType,
-            city: user.city
-        }));
-        res.json(publicUsers);
-    } catch (err) {
-        console.error('Error fetching users:', err.message);
-        res.status(500).json({ message: 'Failed to load users.' });
-    }
+
+/* ---------- Users list ---------- */
+app.get('/api/users', async (_, res) => {
+  try {
+    const users = await User.find({}, 'username userType _id city');
+    res.json(
+      users.map(u => ({
+        id: u._id.toString(),
+        username: u.username,
+        userType: u.userType,
+        city: u.city
+      }))
+    );
+  } catch (err) {
+    console.error('Error fetching users:', err.message);
+    res.status(500).json({ message: 'Failed to load users.' });
+  }
 });
+
+/* ---------- Reports ---------- */
 app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
-    let parsedLocationDetails = {};
-    try {
-        parsedLocationDetails = JSON.parse(req.body.locationDetails);
-        if (!parsedLocationDetails.city) {
-            console.error("Location details missing city field.");
-            return res.status(400).json({ message: 'Location details must include a city.' });
-        }
-    } catch (e) {
-        console.error("Error parsing locationDetails:", e);
-        return res.status(400).json({ message: 'Invalid location details format.' });
+  let location;
+  try {
+    location = JSON.parse(req.body.locationDetails);
+    if (!location.city) {
+      return res.status(400).json({ message: 'Location details must include a city.' });
     }
-    const { faultType, faultDescription, locationType, uploadOption, createdBy, creatorId } = req.body;
-    const uploadedFile = req.file;
-    console.log('Received Report Data:');
-    console.log('Fault Type:', faultType);
-    console.log('Fault Description:', faultDescription);
-    console.log('Location Type:', locationType);
-    console.log('Parsed Location Details:', parsedLocationDetails);
-    console.log('Upload Option:', uploadOption);
-    if (uploadedFile) {
-        console.log('Uploaded File:', uploadedFile.filename, uploadedFile.path);
-    }
-    console.log('Created By:', createdBy);
-    console.log('Creator ID:', creatorId);
-    try {
-        const newReport = new Report({
-            faultType: faultType,
-            faultDescription: faultDescription,
-            location: parsedLocationDetails, 
-            media: uploadedFile ? uploadedFile.filename : null,
-            timestamp: Date.now(),
-            createdBy: createdBy,
-            creatorId: creatorId,
-            status: 'in-progress'
-        });
-        await newReport.save(); 
-        console.log(`Report saved successfully with MongoDB _id: ${newReport._id}`);
-        res.status(200).json({
-            message: 'Report submitted successfully!',
-            reportId: newReport._id,
-            mediaFileNameOnServer: uploadedFile ? uploadedFile.filename : null
-        });
-    } catch (err) {
-        console.error('Error saving report to MongoDB:', err.message);
-        res.status(500).json({ message: 'Failed to save report.' });
-    }
+  } catch {
+    return res.status(400).json({ message: 'Invalid location details format.' });
+  }
+
+  try {
+    const newReport = await new Report({
+      faultType: req.body.faultType,
+      faultDescription: req.body.faultDescription,
+      location,
+      media: req.file ? req.file.filename : null,
+      createdBy: req.body.createdBy,
+      creatorId: req.body.creatorId,
+      status: 'in-progress'
+    }).save();
+
+    res.json({
+      message: 'Report submitted successfully!',
+      reportId: newReport._id,
+      mediaFileNameOnServer: req.file ? req.file.filename : null
+    });
+  } catch (err) {
+    console.error('Error saving report:', err.message);
+    res.status(500).json({ message: 'Failed to save report.' });
+  }
 });
+
 app.get('/api/reports/:id', async (req, res) => {
-    try {
-        const { id } = req.params; 
-        const report = await Report.findById(id); 
-        if (!report) {
-            return res.status(404).json({ message: 'Report not found.' });
-        }
-        const formattedReport = {
-            id: report._id,
-            faultType: report.faultType,
-            description: report.faultDescription,
-            location: report.location,
-            media: report.media,
-            timestamp: report.timestamp ? report.timestamp.toISOString() : null,
-            createdBy: report.createdBy,
-            creatorId: report.creatorId,
-            status: report.status,
-            municipalityResponse: report.municipalityResponse || null
-        };
-        res.json(formattedReport);
-    } catch (e) {
-        console.error(`Error fetching report with ID ${req.params.id} from MongoDB:`, e.message);
-        if (e.name === 'CastError') {
-            return res.status(400).json({ message: 'Invalid Report ID format.' });
-        }
-        res.status(500).json({ message: 'Failed to load report details.' });
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ message: 'Report not found.' });
+    res.json(report);
+  } catch (err) {
+    console.error('Error fetching report:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'Invalid Report ID format.' });
     }
+    res.status(500).json({ message: 'Failed to load report details.' });
+  }
 });
+
+
+/* ---------- נתיב PUT חדש לעדכון דיווח ---------- */
+app.put('/api/reports/:id', async (req, res) => {
+  const { status, municipalityResponse } = req.body;
+  if (status === undefined && municipalityResponse === undefined) {
+    return res.status(400).json({ message: 'Nothing to update.' });
+  }
+
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ message: 'Report not found.' });
+
+    if (status !== undefined)               report.status               = status;
+    if (municipalityResponse !== undefined) report.municipalityResponse = municipalityResponse;
+
+    await report.save();
+    res.json({ message: 'Report updated successfully.', report });
+  } catch (err) {
+    console.error('Error updating report:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'Invalid Report ID format.' });
+    }
+    res.status(500).json({ message: 'Failed to update report.' });
+  }
+});
+/* ---------- סוף הקטע החדש ---------- */
+
 app.get('/api/reports', async (req, res) => {
-    try {
-        let query = {}; 
-        if (req.query.creatorId) {
-            query.creatorId = req.query.creatorId; 
-        }
-        const reports = await Report.find(query).sort({ timestamp: -1 }); 
-        const formattedReports = reports.map(report => ({
-            id: report._id, 
-            faultType: report.faultType,
-            faultDescription: report.faultDescription,
-            location: report.location, 
-            media: report.media,
-            timestamp: report.timestamp ? report.timestamp.toISOString() : null, 
-            createdBy: report.createdBy,
-            creatorId: report.creatorId,
-            status: report.status
-        }));
-        res.json(formattedReports);
-    } catch (e) {
-        console.error('Error fetching reports from MongoDB:', e.message);
-        res.status(500).json({ message: 'Failed to load reports.' });
-    }
+  try {
+    const query = req.query.creatorId ? { creatorId: req.query.creatorId } : {};
+    const reports = await Report.find(query).sort({ timestamp: -1 });
+    res.json(reports);
+  } catch (err) {
+    console.error('Error fetching reports:', err.message);
+    res.status(500).json({ message: 'Failed to load reports.' });
+  }
 });
+
 app.get('/api/employee-reports', async (req, res) => {
-    try {
-        const employeeCity = req.query.city; 
-        const statusFilter = req.query.status;
-        if (!employeeCity) {
-            return res.status(400).json({ message: 'Missing employee city in query parameters.' });
-        }
-        let query = { 'location.city': employeeCity };
-        if (statusFilter && statusFilter !== 'all') { 
-            query.status = statusFilter;
-        }
-        const reports = await Report.find(query).sort({ timestamp: -1 }); 
-        const formattedReports = reports.map(report => ({
-            id: report._id,
-            faultType: report.faultType,
-            faultDescription: report.faultDescription,
-            location: report.location,
-            media: report.media,
-            timestamp: report.timestamp ? report.timestamp.toISOString() : null,
-            createdBy: report.createdBy,
-            creatorId: report.creatorId,
-            status: report.status
-        }));
-        res.json(formattedReports);
-    } catch (e) {
-        console.error('Error fetching employee-relevant reports from MongoDB:', e.message);
-        res.status(500).json({ message: 'Failed to load employee-relevant reports.' });
-    }
+  try {
+    const { city, status } = req.query;
+    if (!city) return res.status(400).json({ message: 'Missing employee city.' });
+
+    const query = { 'location.city': city };
+    if (status && status !== 'all') query.status = status;
+
+    const reports = await Report.find(query).sort({ timestamp: -1 });
+    res.json(reports);
+  } catch (err) {
+    console.error('Error fetching employee reports:', err.message);
+    res.status(500).json({ message: 'Failed to load employee-relevant reports.' });
+  }
 });
+
+/* ---------- Static client & uploads ---------- */
 app.use(express.static(path.join(__dirname, '..', 'client')));
 app.use('/uploads', express.static(uploadDir));
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'client', 'index.html'));
-});
+
+app.get('/', (_, res) =>
+  res.sendFile(path.join(__dirname, '..', 'client', 'index.html'))
+);
 app.get('/html/:pageName', (req, res) => {
-    const pageName = req.params.pageName;
-    const filePath = path.join(__dirname, '..', 'client', 'html', pageName);
-    res.sendFile(filePath, (err) => { 
-        if (err) {
-            console.error(`Error serving ${filePath}:`, err);
-            res.status(404).send('Page not found');
-        }
-    });
+  const filePath = path.join(__dirname, '..', 'client', 'html', req.params.pageName);
+  res.sendFile(filePath, err => {
+    if (err) res.status(404).send('Page not found');
+  });
 });
+
+/* ---------- Start server ---------- */
 app.listen(PORT, () => {
-    console.log(`Server is running. External URL: ${process.env.RENDER_EXTERNAL_URL || 'N/A'}`);
-    console.log(`CORS_ORIGIN set to: ${process.env.CORS_ORIGIN || '*'}`);
-    if (process.env.MONGO_URL) {
-        console.log('MongoDB URL is set (connecting to external DB).');
-    } else {
-        console.warn('MONGO_URL is NOT set. Ensure it is defined for production deployment.');
-    }
+  console.log(`Server running on port ${PORT}`);
 });
