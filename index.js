@@ -16,23 +16,19 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // *** חיבור ל-MongoDB באמצעות Mongoose ***
-mongoose.connect(process.env.MONGO_URL, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGO_URL)
 .then(() => console.log('Connected to MongoDB database.'))
 .catch(err => {
     console.error('MongoDB connection failed:', err.message);
     process.exit(1); // יציאה מהאפליקציה אם החיבור נכשל
 });
 
-// *** הגדרת סכימות ומודלים (Schemas & Models) עבור MongoDB ***
-
 // סכימת משתמש (User Schema)
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     userType: { type: String, required: true },
+    city: { type: String }, // <--- חדש: הוספת שדה עיר למשתמש
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -44,7 +40,7 @@ const reportSchema = new mongoose.Schema({
     faultDescription: { type: String },
     location: { // אובייקט JSON לנתוני מיקום
         type: { type: String, required: true }, // 'manual' or 'current'
-        city: { type: String },
+        city: { type: String, required: true }, // <--- וודא שעיר קיימת וחובה
         street: { type: String },
         houseNumber: { type: String },
         latitude: { type: Number },
@@ -91,7 +87,7 @@ const upload = multer({ storage: storage });
 // --- נקודות הקצה של ה-API שלך (כעת עם MongoDB/Mongoose) ---
 
 // נקודת קצה ללוגין
-app.post('/api/login', async (req, res) => { // *** שינוי: נוסף /api ***
+app.post('/api/login', async (req, res) => {
     const { username, password, userType } = req.body;
 
     try {
@@ -111,7 +107,8 @@ app.post('/api/login', async (req, res) => { // *** שינוי: נוסף /api **
                 user: {
                     username: foundUser.username,
                     userType: foundUser.userType,
-                    userId: foundUser._id
+                    userId: foundUser._id,
+                    city: foundUser.city // <--- חדש: החזר את עיר המשתמש בלוגין
                 }
             });
         } else {
@@ -125,8 +122,8 @@ app.post('/api/login', async (req, res) => { // *** שינוי: נוסף /api **
 });
 
 // נקודת קצה ליצירת משתמש חדש
-app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api ***
-    const { username, password, userType } = req.body;
+app.post('/api/register', async (req, res) => {
+    const { username, password, userType, city } = req.body; // <--- חדש: קבל גם עיר
 
     try {
         // בדוק אם משתמש כבר קיים
@@ -137,16 +134,16 @@ app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
-
         const newUser = new User({
             username,
             password: hashedPassword,
             userType,
+            city, // <--- חדש: שמור את העיר
         });
 
         await newUser.save(); // שמירה ל-MongoDB
-        console.log(`New user registered: ${username} (${userType}) with ID: ${newUser._id}`);        res.status(201).json({ user: { username, userType, userId:newUser._id } });
-
+        console.log(`New user registered: ${username} (${userType}, City: ${city}) with ID: ${newUser._id}`);
+        res.status(201).json({ user: { username, userType, userId:newUser._id, city: newUser.city } }); // <--- חדש: החזר את העיר גם ברישום
     } catch (error) {
         console.error('Error registering new user:', error.message);
         res.status(500).json({ error: 'שגיאה בעת הרשמת משתמש חדש.' });
@@ -154,13 +151,14 @@ app.post('/api/register', async (req, res) => { // *** שינוי: נוסף /api
 });
 
 // נקודת קצה לקבלת רשימת משתמשים (ללא סיסמאות)
-app.get('/api/users', async (req, res) => { // *** שינוי: נוסף /api ***
+app.get('/api/users', async (req, res) => {
     try {
-        const users = await User.find({}, 'username userType _id'); 
+        const users = await User.find({}, 'username userType _id city'); // <--- חדש: הוסף city לשליפה
         const publicUsers = users.map(user => ({
             id: user._id.toString(), 
             username: user.username,
-            userType: user.userType
+            userType: user.userType,
+            city: user.city // <--- חדש: החזר את העיר
         }));
         res.json(publicUsers);
     } catch (err) {
@@ -175,6 +173,11 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
     let parsedLocationDetails = {};
     try {
         parsedLocationDetails = JSON.parse(req.body.locationDetails);
+        // וודא ששדה העיר קיים ב-parsedLocationDetails
+        if (!parsedLocationDetails.city) {
+            console.error("Location details missing city field.");
+            return res.status(400).json({ message: 'Location details must include a city.' });
+        }
     } catch (e) {
         console.error("Error parsing locationDetails:", e);
         return res.status(400).json({ message: 'Invalid location details format.' });
@@ -285,9 +288,48 @@ app.get('/api/reports', async (req, res) => {
     }
 });
 
+// --- נקודת קצה חדשה: קבלת דיווחים רלוונטיים לעובד לפי עיר ---
+// נקודה זו מצפה לקבל את עיר העובד כפרמטר שאילתה, לדוגמה: /api/employee-reports?city=TelAviv
+app.get('/api/employee-reports', async (req, res) => {
+    try {
+        const employeeCity = req.query.city; // קבל את העיר מפרמטרי השאילתה (query parameter)
+        const statusFilter = req.query.status; // קבל את סטטוס הסינון (אם קיים)
+
+        if (!employeeCity) {
+            return res.status(400).json({ message: 'Missing employee city in query parameters.' });
+        }
+
+        let query = { 'location.city': employeeCity }; // שאילתה ראשונית: דיווחים עם העיר של העובד
+
+        if (statusFilter && statusFilter !== 'all') { // אם יש פילטר סטטוס, הוסף לשאילתה
+            query.status = statusFilter;
+        }
+
+        const reports = await Report.find(query).sort({ timestamp: -1 }); // שלוף דיווחים ומיון מהחדש לישן
+
+        const formattedReports = reports.map(report => ({
+            id: report._id,
+            faultType: report.faultType,
+            faultDescription: report.faultDescription,
+            location: report.location,
+            media: report.media,
+            timestamp: report.timestamp ? report.timestamp.toISOString() : null,
+            createdBy: report.createdBy,
+            creatorId: report.creatorId,
+            status: report.status
+        }));
+        res.json(formattedReports);
+    } catch (e) {
+        console.error('Error fetching employee-relevant reports from MongoDB:', e.message);
+        res.status(500).json({ message: 'Failed to load employee-relevant reports.' });
+    }
+});
+
 
 // --- הגשת קבצים סטטיים ---
+// הנתיב לתיקייה הראשית של הקבצים הסטטיים שלך (client)
 app.use(express.static(path.join(__dirname, '..', 'client')));
+// הנתיב לתיקיית העלאות (uploads)
 app.use('/uploads', express.static(uploadDir));
 
 // --- ניתוב לדף הבית הראשי ---
@@ -299,9 +341,11 @@ app.get('/', (req, res) => {
 app.get('/html/:pageName', (req, res) => {
     const pageName = req.params.pageName;
     const filePath = path.join(__dirname, '..', 'client', 'html', pageName);
-    res.sendFile(`${filePath}.html`, (err) => {
+    // חשוב! כאן אנחנו מגישים קובץ HTML, לא קובץ JS.
+    // וודא שהנתיב לסקריפט בתוך ה-HTML נכון
+    res.sendFile(filePath, (err) => { // הסרתי את ה-`.html` שנוסף פעמיים, וזה מה שגרם ל-404
         if (err) {
-            console.error(`Error serving ${filePath}.html:`, err);
+            console.error(`Error serving ${filePath}:`, err);
             res.status(404).send('Page not found');
         }
     });
