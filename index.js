@@ -1,10 +1,10 @@
-const express  = require('express');
-const cors     = require('cors');
-const path     = require('path');
-const bcrypt   = require('bcrypt');
-const fs       = require('fs');
-const multer   = require('multer');
-const mongoose = require('mongoose');
+const express    = require('express');
+const cors       = require('cors');
+const path       = require('path');
+const bcrypt     = require('bcrypt');
+const fs         = require('fs');
+const multer     = require('multer');
+const mongoose   = require('mongoose');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -41,12 +41,12 @@ const reportSchema = new mongoose.Schema({
   faultType           : { type: String, required: true },
   faultDescription    : { type: String },
   location            : {
-    type       : { type: String, required: true },
-    city       : { type: String, required: true },
-    street     : { type: String },
-    houseNumber: { type: String },
-    latitude   : { type: Number },
-    longitude  : { type: Number }
+    type        : { type: String, required: true },
+    city        : { type: String, required: true },
+    street      : { type: String },
+    houseNumber : { type: String },
+    latitude    : { type: Number },
+    longitude   : { type: Number }
   },
   media               : { type: String },
   timestamp           : { type: Date, default: Date.now },
@@ -97,7 +97,7 @@ app.post('/api/login', async (req, res) => {
       user   : {
         username: foundUser.username,
         userType: foundUser.userType,
-        userId  : foundUser._id,
+        userId  : foundUser._id.toString(), // הוסף את ה-ID של המשתמש
         city    : foundUser.city
       }
     });
@@ -116,7 +116,12 @@ app.post('/api/register', async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
     const newUser = await new User({ username, password: hashed, userType, city }).save();
     res.status(201).json({
-      user: { username, userType, userId: newUser._id, city: newUser.city }
+      user: {
+        username: newUser.username,
+        userType: newUser.userType,
+        userId: newUser._id.toString(), // הוסף את ה-ID של המשתמש גם ברישום
+        city: newUser.city
+      }
     });
   } catch (err) {
     console.error('Error registering new user:', err.message);
@@ -190,7 +195,6 @@ app.get('/api/reports/:id', async (req, res) => {
   }
 });
 
-
 /* ---------- נתיב PUT חדש לעדכון דיווח ---------- */
 app.put('/api/reports/:id', async (req, res) => {
   const { status, municipalityResponse } = req.body;
@@ -202,7 +206,7 @@ app.put('/api/reports/:id', async (req, res) => {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ message: 'Report not found.' });
 
-    if (status !== undefined)               report.status               = status;
+    if (status !== undefined)             report.status              = status;
     if (municipalityResponse !== undefined) report.municipalityResponse = municipalityResponse;
 
     await report.save();
@@ -240,6 +244,31 @@ app.get('/api/employee-reports', async (req, res) => {
   } catch (err) {
     console.error('Error fetching employee reports:', err.message);
     res.status(500).json({ message: 'Failed to load employee-relevant reports.' });
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  const userId = req.params.id;
+
+  try {
+    // 1. מחיקת כל הדיווחים שהוגשו על ידי משתמש זה
+    const deleteReportsResult = await Report.deleteMany({ creatorId: userId });
+    console.log(`Deleted ${deleteReportsResult.deletedCount} reports for user ${userId}.`);
+
+    // 2. מחיקת המשתמש עצמו
+    const deleteUserResult = await User.findByIdAndDelete(userId);
+
+    if (!deleteUserResult) {
+      return res.status(404).json({ message: 'המשתמש לא נמצא.' });
+    }
+
+    res.json({ message: 'החשבון וכל הדיווחים הקשורים נמחקו בהצלחה.' });
+  } catch (err) {
+    console.error('Error deleting user and their reports:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'מזהה משתמש לא תקין.' });
+    }
+    res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת החשבון.' });
   }
 });
 
