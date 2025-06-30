@@ -215,7 +215,6 @@ app.put('/api/reports/:id', async (req, res) => {
     res.status(500).json({ message: 'Failed to update report.' });
   }
 });
-/* ---------- סוף הקטע החדש ---------- */
 
 app.get('/api/reports', async (req, res) => {
   try {
