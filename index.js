@@ -247,6 +247,46 @@ app.get('/api/employee-reports', async (req, res) => {
   }
 });
 
+app.delete('/api/reports/:id', async (req, res) => {
+  const reportId = req.params.id;
+  const userId = req.query.userId; 
+
+  try {
+    const report = await Report.findById(reportId);
+
+    if (!report) {
+      return res.status(404).json({ message: 'הדיווח לא נמצא.' });
+    }
+
+    if (report.creatorId.toString() !== userId) {
+      return res.status(403).json({ message: 'אין לך הרשאה למחוק דיווח זה.' });
+    }
+
+    if (report.media) { 
+      const mediaPath = path.join(uploadDir, report.media); 
+      fs.unlink(mediaPath, (err) => {
+        if (err) {
+          console.error(`שגיאה במחיקת קובץ מדיה מהדיסק: ${mediaPath}`, err);
+        } else {
+          console.log(`קובץ מדיה נמחק מהדיסק: ${mediaPath}`);
+        }
+      });
+    }
+
+    await Report.findByIdAndDelete(reportId);
+
+    res.json({ message: 'הדיווח נמחק בהצלחה.' });
+  } catch (err) {
+    console.error('שגיאה במחיקת דיווח:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'מזהה דיווח לא תקין.' });
+    }
+    res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת הדיווח.' });
+  }
+});
+// **סיום של בלוק הדיווחים**
+
+
 app.delete('/api/users/:id', async (req, res) => {
   const userId = req.params.id;
 
