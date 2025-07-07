@@ -227,28 +227,6 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
     res.status(500).json({ message: 'Failed to save report.' });
   }
 });
-        const newReport = await new Report({
-            faultType: req.body.faultType,
-            faultDescription: req.body.faultDescription,
-            location,
-            media: mediaId, // <-- שינוי: שמור את ה-ID של הקובץ ב-GridFS
-            mediaMimeType: mediaMimeType,
-            createdBy: req.body.createdBy,
-            creatorId: req.body.creatorId,
-            status: 'in-progress'
-        }).save();
-
-        res.status(201).json({
-            message: 'Report submitted successfully!',
-            reportId: newReport._id,
-            mediaGridFSId: mediaId, // <-- שינוי: החזר את ה-ID של הקובץ ב-GridFS
-            mediaMimeType: mediaMimeType
-        });
-    } catch (err) {
-        console.error('Error saving report:', err.message);
-        res.status(500).json({ message: 'Failed to save report.' });
-    }
-});
 
 app.get('/api/reports/:id', async (req, res) => {
   try {
