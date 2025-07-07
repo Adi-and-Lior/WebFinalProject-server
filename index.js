@@ -5,6 +5,8 @@ const bcrypt     = require('bcrypt');
 const fs         = require('fs');
 const multer     = require('multer');
 const mongoose   = require('mongoose');
+const { GridFsStorage } = require('multer-gridfs-storage');
+const Grid = require('gridfs-stream');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -21,6 +23,14 @@ mongoose
     console.error('MongoDB connection failed:', err.message);
     process.exit(1);
   });
+
+  let gfs;
+mongoose.connection.once('open', () => {
+    // Initialize stream
+    gfs = Grid(mongoose.connection.db, mongoose.mongo);
+    gfs.collection('uploads'); // This is the default collection name for GridFS files
+    console.log('GridFS initialized.');
+});
 
 /* ---------- Schemas ---------- */
 const userSchema = new mongoose.Schema({
@@ -48,7 +58,8 @@ const reportSchema = new mongoose.Schema({
     latitude    : { type: Number },
     longitude   : { type: Number }
   },
-  media               : { type: String },
+  media               : { type: mongoose.Schema.Types.ObjectId, default: null },
+  mediaMimeType   : { type: String, default: null }, // <--- הוסף שדה זה!
   timestamp           : { type: Date, default: Date.now },
   createdBy           : { type: String },
   creatorId           : { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
@@ -68,15 +79,19 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-/* ---------- File uploads ---------- */
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-  console.log(`Created uploads directory at: ${uploadDir}`);
-}
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadDir),
-  filename  : (_, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+/* ---------- File uploads (with GridFS) ---------- */
+const storage = new GridFsStorage({
+    url: process.env.MONGO_URL, // Use the same MongoDB URL
+    file: (req, file) => {
+        return new Promise((resolve, reject) => {
+            const filename = file.originalname; // Use original filename
+            const fileInfo = {
+                filename: filename,
+                bucketName: 'uploads' // This must match the gfs.collection name above
+            };
+            resolve(fileInfo);
+        });
+    }
 });
 const upload = multer({ storage });
 
@@ -149,36 +164,53 @@ app.get('/api/users', async (_, res) => {
 
 /* ---------- Reports ---------- */
 app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
-  let location;
-  try {
-    location = JSON.parse(req.body.locationDetails);
-    if (!location.city) {
-      return res.status(400).json({ message: 'Location details must include a city.' });
+    console.log('[Server] req.file:', req.file);
+    console.log('[Server] req.body:', req.body);
+    let location;
+    try {
+        location = JSON.parse(req.body.locationDetails);
+        console.log('[Server] Parsed location:', location);
+        if (!location.city) {
+            return res.status(400).json({ message: 'Location details must include a city.' });
+        }
+    } catch {
+        return res.status(400).json({ message: 'Invalid location details format.' });
     }
-  } catch {
-    return res.status(400).json({ message: 'Invalid location details format.' });
-  }
 
-  try {
-    const newReport = await new Report({
-      faultType: req.body.faultType,
-      faultDescription: req.body.faultDescription,
-      location,
-      media: req.file ? req.file.filename : null,
-      createdBy: req.body.createdBy,
-      creatorId: req.body.creatorId,
-      status: 'in-progress'
-    }).save();
+    try {
+        // ה-ID של הקובץ ב-GridFS יהיה ב-req.file.id
+        const mediaId = req.file ? req.file.id : null;
+        const mediaMimeType = req.file ? req.file.mimetype : null; // <--- הוסף שורה זו!
+        console.log('[Server] Creating new report with:', {
+  faultType: req.body.faultType,
+  faultDescription: req.body.faultDescription,
+  location,
+  mediaId: req.file ? req.file.id : null,
+  mediaMimeType: req.file ? req.file.mimetype : null,
+  createdBy: req.body.createdBy,
+  creatorId: req.body.creatorId,
+});
+        const newReport = await new Report({
+            faultType: req.body.faultType,
+            faultDescription: req.body.faultDescription,
+            location,
+            media: mediaId, // <-- שינוי: שמור את ה-ID של הקובץ ב-GridFS
+            mediaMimeType: mediaMimeType,
+            createdBy: req.body.createdBy,
+            creatorId: req.body.creatorId,
+            status: 'in-progress'
+        }).save();
 
-    res.json({
-      message: 'Report submitted successfully!',
-      reportId: newReport._id,
-      mediaFileNameOnServer: req.file ? req.file.filename : null
-    });
-  } catch (err) {
-    console.error('Error saving report:', err.message);
-    res.status(500).json({ message: 'Failed to save report.' });
-  }
+        res.status(201).json({
+            message: 'Report submitted successfully!',
+            reportId: newReport._id,
+            mediaGridFSId: mediaId, // <-- שינוי: החזר את ה-ID של הקובץ ב-GridFS
+            mediaMimeType: mediaMimeType
+        });
+    } catch (err) {
+        console.error('Error saving report:', err.message);
+        res.status(500).json({ message: 'Failed to save report.' });
+    }
 });
 
 app.get('/api/reports/:id', async (req, res) => {
@@ -248,41 +280,49 @@ app.get('/api/employee-reports', async (req, res) => {
 });
 
 app.delete('/api/reports/:id', async (req, res) => {
-  const reportId = req.params.id;
-  const userId = req.query.userId; 
+    const reportId = req.params.id;
+    const userId = req.query.userId;
 
-  try {
-    const report = await Report.findById(reportId);
+    try {
+        const report = await Report.findById(reportId);
 
-    if (!report) {
-      return res.status(404).json({ message: 'הדיווח לא נמצא.' });
-    }
+        if (!report) {
+            return res.status(404).json({ message: 'הדיווח לא נמצא.' });
+        }
 
-    if (report.creatorId.toString() !== userId) {
-      return res.status(403).json({ message: 'אין לך הרשאה למחוק דיווח זה.' });
-    }
+        if (report.creatorId.toString() !== userId) {
+            return res.status(403).json({ message: 'אין לך הרשאה למחוק דיווח זה.' });
+        }
 
-    if (report.media) { 
-      const mediaPath = path.join(uploadDir, report.media); 
-      fs.unlink(mediaPath, (err) => {
-        if (err) {
-          console.error(`שגיאה במחיקת קובץ מדיה מהדיסק: ${mediaPath}`, err);
-        } else {
-          console.log(`קובץ מדיה נמחק מהדיסק: ${mediaPath}`);
-        }
-      });
-    }
+        // --- שינוי כאן: מחיקת המדיה מ-GridFS ---
+        if (report.media) { // Assuming report.media stores the GridFS file ID
+            // Check if gfs is initialized
+            if (!gfs) {
+                console.error('GridFS is not initialized yet during deletion.');
+                // Don't block deletion of report if media deletion fails for this reason
+            } else {
+                try {
+                    const mediaFileId = new mongoose.Types.ObjectId(report.media);
+                    await gfs.files.deleteOne({ _id: mediaFileId });
+                    console.log(`קובץ מדיה נמחק מ-GridFS: ${report.media}`);
+                } catch (err) {
+                    console.error(`שגיאה במחיקת קובץ מדיה מ-GridFS (${report.media}):`, err);
+                    // Log the error but don't prevent report deletion
+                }
+            }
+        }
+        // --- סוף שינוי ---
 
-    await Report.findByIdAndDelete(reportId);
+        await Report.findByIdAndDelete(reportId);
 
-    res.json({ message: 'הדיווח נמחק בהצלחה.' });
-  } catch (err) {
-    console.error('שגיאה במחיקת דיווח:', err.message);
-    if (err.name === 'CastError') {
-      return res.status(400).json({ message: 'מזהה דיווח לא תקין.' });
-    }
-    res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת הדיווח.' });
-  }
+        res.json({ message: 'הדיווח נמחק בהצלחה.' });
+    } catch (err) {
+        console.error('שגיאה במחיקת דיווח:', err.message);
+        if (err.name === 'CastError') {
+            return res.status(400).json({ message: 'מזהה דיווח לא תקין.' });
+        }
+        res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת הדיווח.' });
+    }
 });
 // **סיום של בלוק הדיווחים**
 
@@ -312,9 +352,41 @@ app.delete('/api/users/:id', async (req, res) => {
   }
 });
 
+
+/* ---------- Serve media files from GridFS ---------- */
+app.get('/api/media/:fileId', async (req, res) => {
+    try {
+        // Check if gfs is initialized
+        if (!gfs) {
+            console.error('GridFS is not initialized yet.');
+            return res.status(500).json({ message: 'Server error: GridFS not ready.' });
+        }
+
+        const fileId = new mongoose.Types.ObjectId(req.params.fileId); // Convert string ID to ObjectId
+
+        const file = await gfs.files.findOne({ _id: fileId });
+
+        if (!file || file.length === 0) {
+            return res.status(404).json({ message: 'No file exists.' });
+        }
+
+        // Set the content type based on the file's mimetype
+        res.set('Content-Type', file.contentType);
+        res.set('Content-Disposition', 'inline; filename="' + file.filename + '"');
+
+        // Stream the file from GridFS to the response
+        const readstream = gfs.createReadStream({ _id: fileId });
+        readstream.pipe(res);
+    } catch (err) {
+        console.error('Error fetching file from GridFS:', err.message);
+        if (err.name === 'CastError') {
+            return res.status(400).json({ message: 'Invalid file ID format.' });
+        }
+        res.status(500).json({ message: 'Failed to retrieve media file.' });
+    }
+});
 /* ---------- Static client & uploads ---------- */
 app.use(express.static(path.join(__dirname, '..', 'client')));
-app.use('/uploads', express.static(uploadDir));
 
 app.get('/', (_, res) =>
   res.sendFile(path.join(__dirname, '..', 'client', 'index.html'))
