@@ -5,7 +5,6 @@ const bcrypt     = require('bcrypt');
 const fs         = require('fs');
 const multer     = require('multer');
 const mongoose   = require('mongoose');
-const { GridFsStorage } = require('multer-gridfs-storage');
 const Grid = require('gridfs-stream');
 
 if (process.env.NODE_ENV !== 'production') {
@@ -80,19 +79,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 /* ---------- File uploads (with GridFS) ---------- */
-const storage = new GridFsStorage({
-    url: process.env.MONGO_URL, // Use the same MongoDB URL
-    file: (req, file) => {
-        return new Promise((resolve, reject) => {
-            const filename = file.originalname; // Use original filename
-            const fileInfo = {
-                filename: filename,
-                bucketName: 'uploads' // This must match the gfs.collection name above
-            };
-            resolve(fileInfo);
-        });
-    }
-});
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 /* ---------- Auth routes ---------- */
@@ -164,31 +151,81 @@ app.get('/api/users', async (_, res) => {
 
 /* ---------- Reports ---------- */
 app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
-    console.log('[Server] req.file:', req.file);
-    console.log('[Server] req.body:', req.body);
-    let location;
-    try {
-        location = JSON.parse(req.body.locationDetails);
-        console.log('[Server] Parsed location:', location);
-        if (!location.city) {
-            return res.status(400).json({ message: 'Location details must include a city.' });
-        }
-    } catch {
-        return res.status(400).json({ message: 'Invalid location details format.' });
+  console.log('[Server] req.file:', req.file);
+  console.log('[Server] req.body:', req.body);
+
+  let location;
+  try {
+    location = JSON.parse(req.body.locationDetails);
+    console.log('[Server] Parsed location:', location);
+    if (!location.city) {
+      return res.status(400).json({ message: 'Location details must include a city.' });
+    }
+  } catch {
+    return res.status(400).json({ message: 'Invalid location details format.' });
+  }
+
+  let mediaId = null;
+  let mediaMimeType = null;
+
+  try {
+    if (req.file) {
+      const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+        bucketName: 'uploads'
+      });
+
+      const uploadStream = bucket.openUploadStream(req.file.originalname, {
+        contentType: req.file.mimetype,
+      });
+
+      uploadStream.end(req.file.buffer);
+
+      await new Promise((resolve, reject) => {
+        uploadStream.on('finish', () => {
+          mediaId = uploadStream.id;
+          mediaMimeType = req.file.mimetype;
+          console.log('[Server] File uploaded to GridFS with id:', mediaId);
+          resolve();
+        });
+        uploadStream.on('error', (err) => {
+          console.error('[Server] Error uploading file to GridFS:', err);
+          reject(err);
+        });
+      });
     }
 
-    try {
-        // ה-ID של הקובץ ב-GridFS יהיה ב-req.file.id
-        const mediaId = req.file ? req.file.id : null;
-        const mediaMimeType = req.file ? req.file.mimetype : null; // <--- הוסף שורה זו!
-        console.log('[Server] Creating new report with:', {
-  faultType: req.body.faultType,
-  faultDescription: req.body.faultDescription,
-  location,
-  mediaId: req.file ? req.file.id : null,
-  mediaMimeType: req.file ? req.file.mimetype : null,
-  createdBy: req.body.createdBy,
-  creatorId: req.body.creatorId,
+    console.log('[Server] Creating new report with:', {
+      faultType: req.body.faultType,
+      faultDescription: req.body.faultDescription,
+      location,
+      mediaId,
+      mediaMimeType,
+      createdBy: req.body.createdBy,
+      creatorId: req.body.creatorId,
+    });
+
+    const newReport = await new Report({
+      faultType: req.body.faultType,
+      faultDescription: req.body.faultDescription,
+      location,
+      media: mediaId,
+      mediaMimeType,
+      createdBy: req.body.createdBy,
+      creatorId: req.body.creatorId,
+      status: 'in-progress'
+    }).save();
+
+    res.status(201).json({
+      message: 'Report submitted successfully!',
+      reportId: newReport._id,
+      mediaGridFSId: mediaId,
+      mediaMimeType
+    });
+
+  } catch (err) {
+    console.error('Error saving report:', err.message);
+    res.status(500).json({ message: 'Failed to save report.' });
+  }
 });
         const newReport = await new Report({
             faultType: req.body.faultType,
