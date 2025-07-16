@@ -2,10 +2,8 @@ const express    = require('express');
 const cors       = require('cors');
 const path       = require('path');
 const bcrypt     = require('bcrypt');
-const fs         = require('fs');
 const multer     = require('multer');
 const mongoose   = require('mongoose');
-const Grid = require('gridfs-stream');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -23,12 +21,12 @@ mongoose
     process.exit(1);
   });
 
-  let gfs;
+let bucket;
 mongoose.connection.once('open', () => {
-    // Initialize stream
-    gfs = Grid(mongoose.connection.db, mongoose.mongo);
-    gfs.collection('uploads'); // This is the default collection name for GridFS files
-    console.log('GridFS initialized.');
+    bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+        bucketName: 'uploads'
+    });
+    console.log('GridFSBucket initialized.');
 });
 
 /* ---------- Schemas ---------- */
@@ -58,7 +56,7 @@ const reportSchema = new mongoose.Schema({
     longitude   : { type: Number }
   },
   media               : { type: mongoose.Schema.Types.ObjectId, default: null },
-  mediaMimeType   : { type: String, default: null }, // <--- הוסף שדה זה!
+  mediaMimeType       : { type: String, default: null },
   timestamp           : { type: Date, default: Date.now },
   createdBy           : { type: String },
   creatorId           : { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
@@ -68,13 +66,11 @@ const reportSchema = new mongoose.Schema({
 const Report = mongoose.model('Report', reportSchema);
 
 /* ---------- Middleware ---------- */
-app.use(
-  cors({
-    origin        : process.env.CORS_ORIGIN || '*',
-    methods       : ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  })
-);
+app.use(cors({
+  origin        : process.env.CORS_ORIGIN || '*',
+  methods       : ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -99,7 +95,7 @@ app.post('/api/login', async (req, res) => {
       user   : {
         username: foundUser.username,
         userType: foundUser.userType,
-        userId  : foundUser._id.toString(), // הוסף את ה-ID של המשתמש
+        userId  : foundUser._id.toString(),
         city    : foundUser.city
       }
     });
@@ -121,7 +117,7 @@ app.post('/api/register', async (req, res) => {
       user: {
         username: newUser.username,
         userType: newUser.userType,
-        userId: newUser._id.toString(), // הוסף את ה-ID של המשתמש גם ברישום
+        userId: newUser._id.toString(),
         city: newUser.city
       }
     });
@@ -135,14 +131,12 @@ app.post('/api/register', async (req, res) => {
 app.get('/api/users', async (_, res) => {
   try {
     const users = await User.find({}, 'username userType _id city');
-    res.json(
-      users.map(u => ({
-        id: u._id.toString(),
-        username: u.username,
-        userType: u.userType,
-        city: u.city
-      }))
-    );
+    res.json(users.map(u => ({
+      id: u._id.toString(),
+      username: u.username,
+      userType: u.userType,
+      city: u.city
+    })));
   } catch (err) {
     console.error('Error fetching users:', err.message);
     res.status(500).json({ message: 'Failed to load users.' });
@@ -170,39 +164,27 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
 
   try {
     if (req.file) {
-      const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-        bucketName: 'uploads'
-      });
-
-      const uploadStream = bucket.openUploadStream(req.file.originalname, {
-        contentType: req.file.mimetype,
-      });
-
-      uploadStream.end(req.file.buffer);
-
-      await new Promise((resolve, reject) => {
-        uploadStream.on('finish', () => {
-          mediaId = uploadStream.id;
-          mediaMimeType = req.file.mimetype;
-          console.log('[Server] File uploaded to GridFS with id:', mediaId);
-          resolve();
+      // Use promise to await upload finish event
+      mediaId = await new Promise((resolve, reject) => {
+        const uploadStream = bucket.openUploadStream(req.file.originalname, {
+          contentType: req.file.mimetype,
         });
+
+        uploadStream.end(req.file.buffer);
+
+        uploadStream.on('finish', () => {
+          console.log('[Server] File uploaded to GridFS with id:', uploadStream.id);
+          resolve(uploadStream.id);
+        });
+
         uploadStream.on('error', (err) => {
           console.error('[Server] Error uploading file to GridFS:', err);
           reject(err);
         });
       });
-    }
 
-    console.log('[Server] Creating new report with:', {
-      faultType: req.body.faultType,
-      faultDescription: req.body.faultDescription,
-      location,
-      mediaId,
-      mediaMimeType,
-      createdBy: req.body.createdBy,
-      creatorId: req.body.creatorId,
-    });
+      mediaMimeType = req.file.mimetype;
+    }
 
     const newReport = await new Report({
       faultType: req.body.faultType,
@@ -215,10 +197,11 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
       status: 'in-progress'
     }).save();
 
+    // החזר מזהי המדיה כמחרוזות כדי שלא יהיו בעיות בקליינט
     res.status(201).json({
       message: 'Report submitted successfully!',
-      reportId: newReport._id,
-      mediaGridFSId: mediaId,
+      reportId: newReport._id.toString(),
+      mediaGridFSId: mediaId ? mediaId.toString() : null,
       mediaMimeType
     });
 
@@ -242,7 +225,7 @@ app.get('/api/reports/:id', async (req, res) => {
   }
 });
 
-/* ---------- נתיב PUT חדש לעדכון דיווח ---------- */
+/* ---------- Update report ---------- */
 app.put('/api/reports/:id', async (req, res) => {
   const { status, municipalityResponse } = req.body;
   if (status === undefined && municipalityResponse === undefined) {
@@ -294,63 +277,57 @@ app.get('/api/employee-reports', async (req, res) => {
   }
 });
 
+/* ---------- Delete report (incl. media in GridFS) ---------- */
 app.delete('/api/reports/:id', async (req, res) => {
-    const reportId = req.params.id;
-    const userId = req.query.userId;
+  const reportId = req.params.id;
+  const userId = req.query.userId;
 
-    try {
-        const report = await Report.findById(reportId);
+  try {
+    const report = await Report.findById(reportId);
 
-        if (!report) {
-            return res.status(404).json({ message: 'הדיווח לא נמצא.' });
-        }
-
-        if (report.creatorId.toString() !== userId) {
-            return res.status(403).json({ message: 'אין לך הרשאה למחוק דיווח זה.' });
-        }
-
-        // --- שינוי כאן: מחיקת המדיה מ-GridFS ---
-        if (report.media) { // Assuming report.media stores the GridFS file ID
-            // Check if gfs is initialized
-            if (!gfs) {
-                console.error('GridFS is not initialized yet during deletion.');
-                // Don't block deletion of report if media deletion fails for this reason
-            } else {
-                try {
-                    const mediaFileId = new mongoose.Types.ObjectId(report.media);
-                    await gfs.files.deleteOne({ _id: mediaFileId });
-                    console.log(`קובץ מדיה נמחק מ-GridFS: ${report.media}`);
-                } catch (err) {
-                    console.error(`שגיאה במחיקת קובץ מדיה מ-GridFS (${report.media}):`, err);
-                    // Log the error but don't prevent report deletion
-                }
-            }
-        }
-        // --- סוף שינוי ---
-
-        await Report.findByIdAndDelete(reportId);
-
-        res.json({ message: 'הדיווח נמחק בהצלחה.' });
-    } catch (err) {
-        console.error('שגיאה במחיקת דיווח:', err.message);
-        if (err.name === 'CastError') {
-            return res.status(400).json({ message: 'מזהה דיווח לא תקין.' });
-        }
-        res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת הדיווח.' });
+    if (!report) {
+      return res.status(404).json({ message: 'הדיווח לא נמצא.' });
     }
+
+    if (report.creatorId.toString() !== userId) {
+      return res.status(403).json({ message: 'אין לך הרשאה למחוק דיווח זה.' });
+    }
+
+    if (report.media) {
+      try {
+        const mediaFileId = new mongoose.Types.ObjectId(report.media);
+        // מחיקת המטא־דאטה של הקובץ
+        await mongoose.connection.db.collection('uploads.files').deleteOne({ _id: mediaFileId });
+        // מחיקת הצ'אנקים של הקובץ
+        await mongoose.connection.db.collection('uploads.chunks').deleteMany({ files_id: mediaFileId });
+        console.log(`קובץ מדיה נמחק מ-GridFS: ${report.media}`);
+      } catch (err) {
+        console.error(`שגיאה במחיקת קובץ מדיה מ-GridFS (${report.media}):`, err);
+      }
+    }
+
+    await Report.findByIdAndDelete(reportId);
+
+    res.json({ message: 'הדיווח נמחק בהצלחה.' });
+  } catch (err) {
+    console.error('שגיאה במחיקת דיווח:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'מזהה דיווח לא תקין.' });
+    }
+    res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת הדיווח.' });
+  }
 });
-// **סיום של בלוק הדיווחים**
 
-
+/* ---------- Delete user and their reports ---------- */
 app.delete('/api/users/:id', async (req, res) => {
   const userId = req.params.id;
 
   try {
-    // 1. מחיקת כל הדיווחים שהוגשו על ידי משתמש זה
+    // מחיקת כל הדיווחים של המשתמש
     const deleteReportsResult = await Report.deleteMany({ creatorId: userId });
     console.log(`Deleted ${deleteReportsResult.deletedCount} reports for user ${userId}.`);
 
-    // 2. מחיקת המשתמש עצמו
+    // מחיקת המשתמש עצמו
     const deleteUserResult = await User.findByIdAndDelete(userId);
 
     if (!deleteUserResult) {
@@ -367,39 +344,46 @@ app.delete('/api/users/:id', async (req, res) => {
   }
 });
 
-
 /* ---------- Serve media files from GridFS ---------- */
 app.get('/api/media/:fileId', async (req, res) => {
-    try {
-        // Check if gfs is initialized
-        if (!gfs) {
-            console.error('GridFS is not initialized yet.');
-            return res.status(500).json({ message: 'Server error: GridFS not ready.' });
-        }
-
-        const fileId = new mongoose.Types.ObjectId(req.params.fileId); // Convert string ID to ObjectId
-
-        const file = await gfs.files.findOne({ _id: fileId });
-
-        if (!file || file.length === 0) {
-            return res.status(404).json({ message: 'No file exists.' });
-        }
-
-        // Set the content type based on the file's mimetype
-        res.set('Content-Type', file.contentType);
-        res.set('Content-Disposition', 'inline; filename="' + file.filename + '"');
-
-        // Stream the file from GridFS to the response
-        const readstream = gfs.createReadStream({ _id: fileId });
-        readstream.pipe(res);
-    } catch (err) {
-        console.error('Error fetching file from GridFS:', err.message);
-        if (err.name === 'CastError') {
-            return res.status(400).json({ message: 'Invalid file ID format.' });
-        }
-        res.status(500).json({ message: 'Failed to retrieve media file.' });
+  try {
+    if (!bucket) {
+      console.error('GridFSBucket is not initialized yet.');
+      return res.status(500).json({ message: 'Server error: GridFSBucket not ready.' });
     }
+    console.log('[Server] Requested fileId:', req.params.fileId);
+    const fileId = new mongoose.Types.ObjectId(req.params.fileId);
+
+    const files = await mongoose.connection.db.collection('uploads.files').find({ _id: fileId }).toArray();
+
+    if (!files || files.length === 0) {
+      return res.status(404).json({ message: 'No file exists.' });
+    }
+
+    const file = files[0];
+
+    res.set('Content-Type', file.contentType);
+    res.set('Content-Disposition', `inline; filename="${file.filename}"`);
+
+    const downloadStream = bucket.openDownloadStream(fileId);
+    console.log('[Server] Found files:', files);
+    downloadStream.on('error', (err) => {
+      console.error('Error streaming file:', err);
+      console.error(err.stack);
+      res.sendStatus(500);
+    });
+
+    downloadStream.pipe(res);
+
+  } catch (err) {
+    console.error('Error fetching file from GridFS:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'Invalid file ID format.' });
+    }
+    res.status(500).json({ message: 'Failed to retrieve media file.' });
+  }
 });
+
 /* ---------- Static client & uploads ---------- */
 app.use(express.static(path.join(__dirname, '..', 'client')));
 
