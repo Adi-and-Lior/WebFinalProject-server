@@ -147,7 +147,7 @@ app.get('/api/users', async (_, res) => {
 // נתיב שמחזיר את רשימת הערים בישראל
 app.get('/api/cities', async (req, res) => {
   try {
-    const url = 'https://data.gov.il/api/3/action/datastore_search?resource_id=8b8f049b-9d97-4b29-9a29-8fc030e45f91&limit=1000';
+    const url = 'https://data.gov.il/api/3/action/datastore_search?resource_id=5c78e9fa-c2e2-4771-93ff-7f400a12f7ba&limit=10000';
     const response = await fetch(url);
     const data = await response.json();
 
@@ -170,7 +170,7 @@ app.get('/api/streets', async (req, res) => {
 
   try {
     const encodedCity = encodeURIComponent(city);
-    const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=dcb3e209-471c-4b4d-a9dd-070bcb4b6078&limit=1000&q=${encodedCity}`;
+    const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=dcb3e209-471c-4b4d-a9dd-070bcb4b6078&limit=10000&q=${encodedCity}`;
     const response = await fetch(url);
     const data = await response.json();
 
