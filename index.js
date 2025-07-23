@@ -300,7 +300,7 @@ app.delete('/api/reports/:id', async (req, res) => {
         await mongoose.connection.db.collection('uploads.files').deleteOne({ _id: mediaFileId });
         // מחיקת הצ'אנקים של הקובץ
         await mongoose.connection.db.collection('uploads.chunks').deleteMany({ files_id: mediaFileId });
-        console.log(`קובץ מדיה נמחק מ-GridFS: ${report.media}`);
+        console.log(`Media file deleted from GridFS: ${report.media}`);
       } catch (err) {
         console.error(`שגיאה במחיקת קובץ מדיה מ-GridFS (${report.media}):`, err);
       }
