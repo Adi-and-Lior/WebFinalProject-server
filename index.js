@@ -1,16 +1,16 @@
-const express    = require('express');
-const cors       = require('cors');
-const path       = require('path');
-const bcrypt     = require('bcrypt');
-const multer     = require('multer');
-const mongoose   = require('mongoose');
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const bcrypt = require('bcrypt');
+const multer = require('multer');
+const mongoose = require('mongoose');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* ---------- MongoDB ---------- */
@@ -68,8 +68,8 @@ const Report = mongoose.model('Report', reportSchema);
 
 /* ---------- Middleware ---------- */
 app.use(cors({
-  origin        : process.env.CORS_ORIGIN || '*',
-  methods       : ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  origin      : process.env.CORS_ORIGIN || '*',
+  methods     : ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
@@ -144,57 +144,106 @@ app.get('/api/users', async (_, res) => {
   }
 });
 
-// נתיב שמחזיר את רשימת הערים בישראל
+
+// Global variables to store cities and streets data in memory
+let allCities = [];
+let allStreets = [];
+
+// Function to load all cities and streets from data.gov.il on server startup
+async function loadAllGeoData() {
+    console.log('Server: Starting to load all geo data from data.gov.il...');
+    try {
+        // Load cities
+        const citiesUrl = 'https://data.gov.il/api/3/action/datastore_search?resource_id=5c78e9fa-c2e2-4771-93ff-7f400a12f7ba&limit=100000'; // Increased limit
+        const citiesResponse = await fetch(citiesUrl);
+        const citiesData = await citiesResponse.json();
+
+        if (!citiesData.success) {
+            console.error('Server: Failed to fetch cities from external API.');
+            return;
+        }
+        allCities = citiesData.result.records.map(r => r.שם_ישוב).filter((v, i, a) => a.indexOf(v) === i).sort();
+        console.log(`Server: Loaded ${allCities.length} unique cities.`);
+
+        // Load streets (might need to iterate if total is > 32000)
+        // For simplicity, let's assume one fetch is enough for now, or fetch in chunks if needed
+        const streetsResourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b';
+        const streetsUrl = `https://data.gov.il/api/3/action/datastore_search?resource_id=${streetsResourceId}&limit=100000`; // Increased limit
+        const streetsResponse = await fetch(streetsUrl);
+        const streetsData = await streetsResponse.json();
+
+        if (!streetsData.success) {
+            console.error('Server: Failed to fetch streets from external API.');
+            return;
+        }
+        // Store objects with city and street name for easier lookup
+        allStreets = streetsData.result.records.map(r => ({
+            city: r.שם_ישוב,
+            street: r.שם_רחוב
+        })).filter(item => item.city && item.street); // Filter out entries with missing city/street
+        console.log(`Server: Loaded ${allStreets.length} street records.`);
+
+    } catch (err) {
+        console.error('Server: Error loading geo data on startup:', err.message);
+    }
+}
+
+// Call this function when the server starts
+loadAllGeoData();
+
+
+// נתיב שמחזיר את רשימת הערים בישראל (כעת מזיכרון)
 app.get('/api/cities', async (req, res) => {
-  try {
-    const url = 'https://data.gov.il/api/3/action/datastore_search?resource_id=5c78e9fa-c2e2-4771-93ff-7f400a12f7ba&limit=10000';
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (!data.success) {
-      return res.status(500).json({ message: 'שליפת הערים נכשלה.' });
+    try {
+        if (allCities.length === 0) {
+            console.warn('Server: Cities data not yet loaded or empty. Attempting to reload...');
+            await loadAllGeoData(); // Try reloading if empty
+            if (allCities.length === 0) {
+                return res.status(503).json({ message: 'Cities data not available yet.' });
+            }
+        }
+        res.json(allCities);
+    } catch (err) {
+        console.error('Server: Error serving cities from memory:', err.message);
+        res.status(500).json({ message: 'שגיאה בשרת בעת שליפת ערים.' });
     }
-
-    const cities = data.result.records.map(r => r.שם_ישוב).filter((v, i, a) => a.indexOf(v) === i);
-    res.json(cities.sort());
-  } catch (err) {
-    console.error('שגיאה בשליפת ערים:', err.message);
-    res.status(500).json({ message: 'שגיאה בשרת בעת שליפת ערים.' });
-  }
 });
 
-// נתיב שמחזיר את רשימת הרחובות לעיר מסוימת
+// נתיב שמחזיר את רשימת הרחובות לעיר מסוימת (כעת מזיכרון עם סינון גמיש)
 app.get('/api/streets', async (req, res) => {
-  const city = req.query.city;
-  if (!city) {
-    return res.status(400).json({ message: 'נא לספק שם עיר בפרמטר ?city=' });
-  }
+    const cityQuery = req.query.city ? req.query.city.trim() : '';
+    console.log(`Server: Received request for streets in city: '${cityQuery}'`);
 
-  try {
-    const resourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b'; // מאגר הכתובות הממשלתי
-    const filters = encodeURIComponent(JSON.stringify({ "שם_ישוב": city }));
-    const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=${resourceId}&limit=32000&filters=${filters}`;
-
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      return res.status(500).json({ message: 'שליפת הרחובות נכשלה מהשרת החיצוני' });
+    if (!cityQuery) {
+        return res.status(400).json({ message: 'נא לספק שם עיר בפרמטר ?city=' });
     }
 
-    // חילוץ, סינון ומיון של שמות הרחובות
-    const streets = data.result.records
-      .map(r => r["שם_רחוב"])
-      .filter((val, i, arr) => val && arr.indexOf(val) === i)
-      .sort();
+    if (allStreets.length === 0) {
+        console.warn('Server: Streets data not yet loaded or empty. Attempting to reload...');
+        await loadAllGeoData(); // Try reloading if empty
+        if (allStreets.length === 0) {
+            return res.status(503).json({ message: 'Streets data not available yet.' });
+        }
+    }
 
-    res.json(streets);
-  } catch (err) {
-    console.error('שגיאה בשליפת רחובות:', err.message);
-    res.status(500).json({ message: 'שגיאה בשרת בעת שליפת רחובות.' });
-  }
+    try {
+        const lowerCaseCityQuery = cityQuery.toLowerCase();
+
+        // Filter streets based on partial, case-insensitive match of the city name
+        // And then extract unique street names
+        const filteredStreets = allStreets
+            .filter(item => item.city && item.city.toLowerCase().includes(lowerCaseCityQuery))
+            .map(item => item.street)
+            .filter((val, i, arr) => val && arr.indexOf(val) === i) // Ensure unique and not null/undefined
+            .sort();
+
+        console.log(`Server: Found ${filteredStreets.length} streets for city query '${cityQuery}'.`);
+        res.json(filteredStreets);
+    } catch (err) {
+        console.error('Server: Error serving streets from memory:', err.message);
+        res.status(500).json({ message: 'שגיאה בשרת בעת שליפת רחובות.' });
+    }
 });
-
 
 
 /* ---------- Reports ---------- */
@@ -290,7 +339,7 @@ app.put('/api/reports/:id', async (req, res) => {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ message: 'Report not found.' });
 
-    if (status !== undefined)             report.status              = status;
+    if (status !== undefined)          report.status             = status;
     if (municipalityResponse !== undefined) report.municipalityResponse = municipalityResponse;
 
     await report.save();
