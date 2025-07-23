@@ -172,7 +172,7 @@ app.get('/api/streets', async (req, res) => {
 
   try {
     // ה-resource_id הנכון למאגר הרחובות הוא 'dcb3e209-471c-4b4d-a9dd-070bcb4b6078'.
-    const resourceId = 'dcb3e209-471c-4b4d-a9dd-070bcb4b6078';
+    const resourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b';
 
     // לביצוע חיפוש מדויק לפי שם העיר, נשתמש באובייקט JSON בפרמטר 'q'.
     // השדה במאגר הרחובות עבור שם העיר הוא 'שם_ישוב'.
