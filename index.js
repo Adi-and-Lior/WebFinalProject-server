@@ -167,41 +167,26 @@ app.get('/api/cities', async (req, res) => {
 app.get('/api/streets', async (req, res) => {
   const city = req.query.city;
   if (!city) {
-    return res.status(400).json({ message: 'נא לציין שם עיר בפרמטר ?city=' });
+    return res.status(400).json({ message: 'נא לספק שם עיר בפרמטר ?city=' });
   }
 
   try {
-    // ה-resource_id הנכון למאגר הרחובות הוא 'dcb3e209-471c-4b4d-a9dd-070bcb4b6078'.
-    const resourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b';
+    const resourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b'; // מאגר הכתובות
+    const filters = encodeURIComponent(JSON.stringify({ "שם ישוב": city }));
+    const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=${resourceId}&limit=32000&filters=${filters}`;
 
-    // לביצוע חיפוש מדויק לפי שם העיר, נשתמש באובייקט JSON בפרמטר 'q'.
-    // השדה במאגר הרחובות עבור שם העיר הוא 'שם_ישוב'.
-    const query = JSON.stringify({ "שם_ישוב": city });
-    const encodedQuery = encodeURIComponent(query);
-
-    // בניית ה-URL עם ה-resource_id הנכון, ה-limit המרבי (32000), ופרמטר השאילתה המקודד.
-    const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=${resourceId}&limit=32000&q=${encodedQuery}`;
-    
     const response = await fetch(url);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      const errorDetails = data.error ? data.error.message : 'שגיאה לא ידועה מה-API החיצוני.';
-      console.error(`שליפת הרחובות נכשלה: ${errorDetails}`);
-      return res.status(response.status || 500).json({ message: `שליפת הרחובות נכשלה: ${errorDetails}` });
+      return res.status(500).json({ message: 'שליפת הרחובות נכשלה מהשרת החיצוני' });
     }
 
-    // ודא שהנתונים קיימים ושיש מערך records
-    if (!data.result || !Array.isArray(data.result.records)) {
-        console.error('מבנה נתונים לא צפוי מה-API:', data);
-        return res.status(500).json({ message: 'מבנה נתונים לא צפוי מה-API החיצוני.' });
-    }
-
+    // חילוץ, סינון ומיון של שמות הרחובות
     const streets = data.result.records
-      .filter(r => r.שם_ישוב === city) // סינון וודאי לפי שם העיר
-      .map(r => r.שם_רחוב) // מיפוי לשם הרחוב בלבד
-      .filter((v, i, a) => a.indexOf(v) === i && v) // סינון כפילויות וערכים ריקים/undefined
-      .sort(); // מיון אלפביתי
+      .map(r => r["שם רחוב"])
+      .filter((val, i, arr) => val && arr.indexOf(val) === i)
+      .sort();
 
     res.json(streets);
   } catch (err) {
@@ -209,6 +194,7 @@ app.get('/api/streets', async (req, res) => {
     res.status(500).json({ message: 'שגיאה בשרת בעת שליפת רחובות.' });
   }
 });
+
 
 
 /* ---------- Reports ---------- */
