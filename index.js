@@ -171,8 +171,8 @@ app.get('/api/streets', async (req, res) => {
   }
 
   try {
-    const resourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b'; // מאגר הכתובות
-    const filters = encodeURIComponent(JSON.stringify({ "שם ישוב": city }));
+    const resourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b'; // מאגר הכתובות הממשלתי
+    const filters = encodeURIComponent(JSON.stringify({ "שם_ישוב": city }));
     const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=${resourceId}&limit=32000&filters=${filters}`;
 
     const response = await fetch(url);
@@ -184,7 +184,7 @@ app.get('/api/streets', async (req, res) => {
 
     // חילוץ, סינון ומיון של שמות הרחובות
     const streets = data.result.records
-      .map(r => r["שם רחוב"])
+      .map(r => r["שם_רחוב"])
       .filter((val, i, arr) => val && arr.indexOf(val) === i)
       .sort();
 
