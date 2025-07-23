@@ -4,6 +4,7 @@ const path       = require('path');
 const bcrypt     = require('bcrypt');
 const multer     = require('multer');
 const mongoose   = require('mongoose');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -142,6 +143,53 @@ app.get('/api/users', async (_, res) => {
     res.status(500).json({ message: 'Failed to load users.' });
   }
 });
+
+// נתיב שמחזיר את רשימת הערים בישראל
+app.get('/api/cities', async (req, res) => {
+  try {
+    const url = 'https://data.gov.il/api/3/action/datastore_search?resource_id=8b8f049b-9d97-4b29-9a29-8fc030e45f91&limit=1000';
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!data.success) {
+      return res.status(500).json({ message: 'שליפת הערים נכשלה.' });
+    }
+
+    const cities = data.result.records.map(r => r.שם_ישוב).filter((v, i, a) => a.indexOf(v) === i);
+    res.json(cities.sort());
+  } catch (err) {
+    console.error('שגיאה בשליפת ערים:', err.message);
+    res.status(500).json({ message: 'שגיאה בשרת בעת שליפת ערים.' });
+  }
+});
+
+// נתיב שמחזיר את רשימת הרחובות לעיר מסוימת
+app.get('/api/streets', async (req, res) => {
+  const city = req.query.city;
+  if (!city) return res.status(400).json({ message: 'נא לציין שם עיר בפרמטר ?city=' });
+
+  try {
+    const encodedCity = encodeURIComponent(city);
+    const url = `https://data.gov.il/api/3/action/datastore_search?resource_id=dcb3e209-471c-4b4d-a9dd-070bcb4b6078&limit=1000&q=${encodedCity}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!data.success) {
+      return res.status(500).json({ message: 'שליפת הרחובות נכשלה.' });
+    }
+
+    const streets = data.result.records
+      .filter(r => r.שם_ישוב === city)
+      .map(r => r.שם_רחוב)
+      .filter((v, i, a) => a.indexOf(v) === i);
+
+    res.json(streets.sort());
+  } catch (err) {
+    console.error('שגיאה בשליפת רחובות:', err.message);
+    res.status(500).json({ message: 'שגיאה בשרת בעת שליפת רחובות.' });
+  }
+});
+
 
 /* ---------- Reports ---------- */
 app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
