@@ -328,6 +328,47 @@ app.get('/api/reports/:id', async (req, res) => {
   }
 });
 
+// הוסף את זה לקובץ השרת הראשי שלך (server.js), בתוך קטע ה-Reports או בנפרד
+
+app.get('/api/my-reports-locations', async (req, res) => {
+    const creatorId = req.query.creatorId; 
+
+    try {
+        const query = creatorId ? { creatorId: creatorId } : {}; 
+        
+        const reports = await Report.find(query); 
+
+        const locations = reports.map(report => {
+            if (report.location && typeof report.location.latitude === 'number' && typeof report.location.longitude === 'number') {
+                return {
+                    lat: report.location.latitude,
+                    lng: report.location.longitude,
+                    title: report.faultType || 'דיווח' 
+                };
+            }
+            return null;
+        }).filter(Boolean); 
+
+        res.json(locations);
+    } catch (error) {
+        console.error('שגיאה בשליפת מיקומי דיווחים למפה:', error.message);
+        res.status(500).json({ message: 'שגיאה בשרת בעת שליפת מיקומי דיווחים.' });
+    }
+});
+
+app.get('/api/google-maps-api-key', (req, res) => {
+  // שלח את מפתח ה-API מהמשתנים הסביבתיים
+  const apiKey = process.env.Maps_API_KEY;
+
+  if (!apiKey) {
+    console.error('Google Maps API Key אינו מוגדר במשתני הסביבה!');
+    return res.status(500).json({ message: 'מפתח API למפות אינו זמין בשרת.' });
+  }
+
+  res.json({ apiKey: apiKey });
+});
+
+
 /* ---------- Update report ---------- */
 app.put('/api/reports/:id', async (req, res) => {
   const { status, municipalityResponse } = req.body;
