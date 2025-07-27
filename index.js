@@ -63,6 +63,45 @@ app.get('/html/:pageName', (req, res) => {
   });
 });
 
+router.put('/reports/:id/location', async (req, res) => {
+  const reportId = req.params.id;
+  const { city, street, houseNumber } = req.body;
+
+  // ולידציה בסיסית של הנתונים
+  if (!city || !street) {
+    return res.status(400).json({ message: 'נדרשים עיר ורחוב לעדכון מיקום.' });
+  }
+
+  try {
+    const report = await Report.findById(reportId);
+
+    if (!report) {
+      return res.status(404).json({ message: 'הדיווח לא נמצא.' });
+    }
+
+    // עדכון שדות המיקום
+    // נניח שזה הופך למיקום ידני 
+    report.location.city = city;
+    report.location.street = street;
+    report.location.houseNumber = houseNumber || ''; // אם houseNumber לא סופק, יהיה ריק
+  
+    if (report.location.latitude !== undefined) {
+      report.location.latitude = undefined;
+    }
+    if (report.location.longitude !== undefined) {
+      report.location.longitude = undefined;
+    }
+    await report.save();
+    res.json({ message: 'מיקום הדיווח עודכן בהצלחה.', report });
+  } catch (err) {
+    console.error('שגיאה בעדכון מיקום הדיווח:', err.message);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: 'מזהה דיווח לא תקין.' });
+    }
+    res.status(500).json({ message: 'שגיאה בשרת בעת עדכון מיקום הדיווח.' });
+  }
+});
+
 /* ---------- Start server ---------- */
 // Starts the Express server after MongoDB connection and GridFSBucket are initialized.
 mongooseConnection.once('open', () => { 
