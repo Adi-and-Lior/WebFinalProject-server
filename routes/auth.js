@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const User = require('../models/User'); 
+const jwt = require('jsonwebtoken');
 
 /* ---------- Handles user login requests ---------- */
 router.post('/login', async (req, res) => {
@@ -15,8 +16,14 @@ router.post('/login', async (req, res) => {
     if (!ok) {
       return res.status(401).json({ error: 'שם משתמש או סיסמה שגויים.' });
     }
+    const token = jwt.sign(
+        { userId: foundUser._id, userType: foundUser.userType }, 
+        process.env.JWT_SECRET,                             
+        { expiresIn: '1h' }                                 
+    );
     res.json({
       message: 'Login successful',
+      token: token,
       user   : {
         username: foundUser.username,
         userType: foundUser.userType,
