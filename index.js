@@ -42,10 +42,14 @@ const reportRoutes = require('./routes/reports');
 // Imports and uses geographical data routes.
 const geoRoutes = require('./routes/geo');
 
+// Imports and uses enums data routes.
+const enumsRoutes = require('./routes/enums'); 
+
 app.use('/api', authRoutes);
 app.use('/api', userRoutes);
 app.use('/api', reportRoutes);
 app.use('/api', geoRoutes);
+app.use('/api', enumsRoutes); 
 
 // Serves static files (HTML, CSS, JS, images) from the 'client' directory.
 app.use(express.static(path.join(__dirname, '..', 'client')));
