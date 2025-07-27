@@ -125,7 +125,7 @@ router.put('/reports/:id', async (req, res) => {
 });
 router.put('/reports/:id/location', async (req, res) => {
   const reportId = req.params.id;
-  const { city, street, houseNumber } = req.body;
+  const { city, street, houseNumber,latitude, longitude } = req.body;
 
   // ולידציה בסיסית של הנתונים
   if (!city || !street) {
@@ -144,13 +144,8 @@ router.put('/reports/:id/location', async (req, res) => {
     report.location.city = city;
     report.location.street = street;
     report.location.houseNumber = houseNumber || ''; // אם houseNumber לא סופק, יהיה ריק
-  
-    if (report.location.latitude !== undefined) {
-      report.location.latitude = undefined;
-    }
-    if (report.location.longitude !== undefined) {
-      report.location.longitude = undefined;
-    }
+    report.location.latitude = latitude;
+    report.location.longitude = longitude;
     await report.save();
     res.json({ message: 'מיקום הדיווח עודכן בהצלחה.', report });
   } catch (err) {
