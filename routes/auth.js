@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const User = require('../models/User'); // ייבוא מודל המשתמש
+const User = require('../models/User'); 
 
-/* ---------- Auth routes ---------- */
+/* ---------- Handles user login requests ---------- */
 router.post('/login', async (req, res) => {
   const { username, password, userType } = req.body;
   try {
@@ -30,6 +30,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
+/* ---------- Handles new user registration requests ---------- */
 router.post('/register', async (req, res) => {
   const { username, password, userType, city } = req.body;
   try {

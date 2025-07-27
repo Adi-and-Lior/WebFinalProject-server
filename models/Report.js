@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 
+/* ---------- Defines the Mongoose schema for a report document ---------- */
 const reportSchema = new mongoose.Schema({
   faultType           : { type: String, required: true },
   faultDescription    : { type: String },
@@ -19,5 +20,7 @@ const reportSchema = new mongoose.Schema({
   status              : { type: String, default: 'in-progress' },
   municipalityResponse: { type: String, default: null }
 });
+
+/* ---------- Creates the Mongoose model for Report, based on the reportSchema ---------- */
 const Report = mongoose.model('Report', reportSchema);
 module.exports = Report;

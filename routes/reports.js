@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const Report = require('../models/Report'); // ייבוא מודל הדיווח
-const upload = require('../middleware/multerUpload'); // ייבוא Multer
-const { bucket } = require('../config/db'); // ייבוא ה-bucket (שהוא כעת פונקציה) מחיבור הדאטהבייס
+const Report = require('../models/Report'); 
+const upload = require('../middleware/multerUpload'); 
+const { bucket } = require('../config/db'); 
 
-/* ---------- Reports ---------- */
+/* ---------- Handles the creation of a new report, including optional media file upload to GridFS ---------- */
 router.post('/reports', upload.single('mediaFile'), async (req, res) => {
   console.log('[Server] req.file:', req.file);
   console.log('[Server] req.body:', req.body);
@@ -24,14 +24,12 @@ router.post('/reports', upload.single('mediaFile'), async (req, res) => {
   try {
     if (req.file) {
       mediaId = await new Promise((resolve, reject) => {
-        // קריאה לפונקציית ה-bucket כדי לקבל את המופע המאותחל של GridFSBucket
-        const currentBucket = bucket(); // <--- שינוי חשוב: קריאה לפונקציה
+        const currentBucket = bucket(); 
         if (!currentBucket) {
           console.error('[Server] Error: GridFSBucket is not initialized for upload.');
           return reject(new Error('GridFSBucket not ready for upload.'));
         }
-
-        const uploadStream = currentBucket.openUploadStream(req.file.originalname, { // <--- שימוש ב-currentBucket
+        const uploadStream = currentBucket.openUploadStream(req.file.originalname, { 
           contentType: req.file.mimetype,
         });
         uploadStream.end(req.file.buffer);
@@ -68,6 +66,7 @@ router.post('/reports', upload.single('mediaFile'), async (req, res) => {
   }
 });
 
+/* ---------- Retrieves a single report by its ID ---------- */
 router.get('/reports/:id', async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
@@ -82,6 +81,7 @@ router.get('/reports/:id', async (req, res) => {
   }
 });
 
+/* ---------- Retrieves location data for all reports to display on a map ---------- */
 router.get('/all-reports-locations', async (req, res) => {
   try {
     const allReports = await Report.find({}, 'location.latitude location.longitude faultType');
@@ -102,13 +102,12 @@ router.get('/all-reports-locations', async (req, res) => {
   }
 });
 
-/* ---------- Update report ---------- */
+/* ---------- Handles updates to an existing report's status or municipality response ---------- */
 router.put('/reports/:id', async (req, res) => {
   const { status, municipalityResponse } = req.body;
   if (status === undefined && municipalityResponse === undefined) {
     return res.status(400).json({ message: 'Nothing to update.' });
   }
-
   try {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ message: 'Report not found.' });
@@ -125,6 +124,7 @@ router.put('/reports/:id', async (req, res) => {
   }
 });
 
+/* ---------- Retrieves a list of reports, optionally filtered by creator ID ---------- */
 router.get('/reports', async (req, res) => {
   try {
     const query = req.query.creatorId ? { creatorId: req.query.creatorId } : {};
@@ -136,6 +136,7 @@ router.get('/reports', async (req, res) => {
   }
 });
 
+/* ---------- Retrieves reports relevant to an employee based on city and optional status ---------- */
 router.get('/employee-reports', async (req, res) => {
   try {
     const { city, status } = req.query;
@@ -150,7 +151,7 @@ router.get('/employee-reports', async (req, res) => {
   }
 });
 
-/* ---------- Delete report (incl. media in GridFS) ---------- */
+/* ---------- Handles the deletion of a report and its associated media file from GridFS ---------- */
 router.delete('/reports/:id', async (req, res) => {
   const reportId = req.params.id;
   const userId = req.query.userId;
@@ -165,9 +166,7 @@ router.delete('/reports/:id', async (req, res) => {
     if (report.media) {
       try {
         const mediaFileId = new mongoose.Types.ObjectId(report.media);
-        // מחיקת המטא־דאטה של הקובץ
         await mongoose.connection.db.collection('uploads.files').deleteOne({ _id: mediaFileId });
-        // מחיקת הצ'אנקים של הקובץ
         await mongoose.connection.db.collection('uploads.chunks').deleteMany({ files_id: mediaFileId });
         console.log(`Media file deleted from GridFS: ${report.media}`);
       } catch (err) {
@@ -185,41 +184,30 @@ router.delete('/reports/:id', async (req, res) => {
   }
 });
 
-
-/* ---------- Serve media files from GridFS ---------- */
+/* ---------- Serves a media file from GridFS based on its file ID ---------- */
 router.get('/media/:fileId', async (req, res) => {
   try {
-    // קריאה לפונקציית ה-bucket כדי לקבל את המופע המאותחל של GridFSBucket
-    const currentBucket = bucket(); // <--- שינוי חשוב: קריאה לפונקציה
-
+    const currentBucket = bucket(); 
     if (!currentBucket) {
       console.error('GridFSBucket is not initialized yet during media download.');
       return res.status(500).json({ message: 'Server error: GridFSBucket not ready for download.' });
     }
-
     console.log('[Server] Requested fileId:', req.params.fileId);
     const fileId = new mongoose.Types.ObjectId(req.params.fileId);
     const files = await mongoose.connection.db.collection('uploads.files').find({ _id: fileId }).toArray();
-
     if (!files || files.length === 0) {
       return res.status(404).json({ message: 'No file exists.' });
     }
-
     const file = files[0];
     res.set('Content-Type', file.contentType);
     res.set('Content-Disposition', `inline; filename="${file.filename}"`);
-
-    // שימוש ב-currentBucket (המופע האמיתי של GridFSBucket)
-    const downloadStream = currentBucket.openDownloadStream(fileId); // <--- שימוש ב-currentBucket
-
+    const downloadStream = currentBucket.openDownloadStream(fileId);
     console.log('[Server] Found files:', files);
-
     downloadStream.on('error', (err) => {
       console.error('Error streaming file:', err);
       console.error(err.stack);
       res.sendStatus(500);
     });
-
     downloadStream.pipe(res);
   } catch (err) {
     console.error('Error fetching file from GridFS:', err.message);
@@ -229,6 +217,5 @@ router.get('/media/:fileId', async (req, res) => {
     res.status(500).json({ message: 'Failed to retrieve media file.' });
   }
 });
-
 
 module.exports = router;

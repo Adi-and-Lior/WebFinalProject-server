@@ -3,6 +3,7 @@ const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args)); 
 const { getCities, getStreets } = require('../utils/geoDataHelper'); 
 
+/* ---------- Handles requests to get a list of cities ---------- */
 router.get('/cities', async (req, res) => {
     try {
         const cities = getCities();
@@ -17,6 +18,7 @@ router.get('/cities', async (req, res) => {
     }
 });
 
+/* ---------- Handles requests to get a list of streets for a given city ---------- */
 router.get('/streets', async (req, res) => {
     const cityQuery = req.query.city ? req.query.city.trim() : '';
     console.log(`Server: Received request for streets in city: '${cityQuery}'`);
@@ -29,16 +31,12 @@ router.get('/streets', async (req, res) => {
             console.error('Server: Streets data is empty. Initial load might have failed.');
             return res.status(500).json({ message: 'נתוני רחובות אינם זמינים בשרת. ייתכן שיש בעיה בטעינה ראשונית.' });
         }
-
         const lowerCaseCityQuery = cityQuery.toLowerCase();
-        
-        // השינוי העיקרי כאן: מ- '===' ל- '.includes()'
         const filteredStreets = allStreetsData
             .filter(item => item.city && item.city.toLowerCase().includes(lowerCaseCityQuery)) 
             .map(item => item.street)
             .filter((val, i, arr) => val && arr.indexOf(val) === i) 
             .sort();
-
         console.log(`Server: Found ${filteredStreets.length} streets for city query '${cityQuery}'.`);
         res.json(filteredStreets);
     } catch (err) {
@@ -47,6 +45,7 @@ router.get('/streets', async (req, res) => {
     }
 });
 
+/* ---------- Handles requests to get the Google Maps API key ---------- */
 router.get('/google-maps-api-key', (req, res) => {
     const apiKey = process.env.Maps_API_KEY;
     if (!apiKey) {
@@ -56,6 +55,7 @@ router.get('/google-maps-api-key', (req, res) => {
     res.json({ apiKey: apiKey });
 });
 
+/* ---------- Handles reverse geocoding requests using Nominatim ---------- */
 router.get('/reverse-geocode', async (req, res) => {
     const { lat, lon } = req.query;
     try {

@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
-const Report = require('../models/Report'); // נצטרך את Report למחיקה
+const Report = require('../models/Report'); 
 
-/* ---------- Users list ---------- */
+/* ---------- Handles requests to get a list of all users ---------- */
 router.get('/users', async (_, res) => {
   try {
     const users = await User.find({}, 'username userType _id city');
@@ -19,15 +19,13 @@ router.get('/users', async (_, res) => {
   }
 });
 
-
-/* ---------- Delete user and their reports ---------- */
+/* ---------- Handles requests to delete a user and all their associated reports ---------- */
 router.delete('/users/:id', async (req, res) => {
   const userId = req.params.id;
   try {
     const deleteReportsResult = await Report.deleteMany({ creatorId: userId });
     console.log(`Deleted ${deleteReportsResult.deletedCount} reports for user ${userId}.`);
     const deleteUserResult = await User.findByIdAndDelete(userId);
-
     if (!deleteUserResult) {
       return res.status(404).json({ message: 'המשתמש לא נמצא.' });
     }

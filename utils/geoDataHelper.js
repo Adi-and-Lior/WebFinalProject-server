@@ -4,7 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 let allCities = [];
 let allStreets = [];
 
-// Function to load all cities and streets from data.gov.il on server startup
+/* ---------- Function to load all cities and streets from data.gov.il on server startup ---------- */
 async function loadAllGeoData() {
     console.log('Server: Starting to load all geo data from data.gov.il...');
     try {
@@ -21,29 +21,26 @@ async function loadAllGeoData() {
         const streetsUrl = `https://data.gov.il/api/3/action/datastore_search?resource_id=${streetsResourceId}&limit=100000`; // Increased limit
         const streetsResponse = await fetch(streetsUrl);
         const streetsData = await streetsResponse.json();
-
         if (!streetsData.success) {
             console.error('Server: Failed to fetch streets from external API.');
             return;
         }
-        // Store objects with city and street name for easier lookup
         allStreets = streetsData.result.records.map(r => ({
             city: r.שם_ישוב,
             street: r.שם_רחוב
         })).filter(item => item.city && item.street); 
         console.log(`Server: Loaded ${allStreets.length} street records.`);
-
     } catch (err) {
         console.error('Server: Error loading geo data on startup:', err.message);
     }
 }
 
-//////////////////////////////////
-// פונקציות עזר לייצוא, כדי שניתובים יוכלו לגשת לנתונים
+/* ---------- Returns the currently loaded list of unique cities ---------- */
 function getCities() {
     return allCities;
 }
 
+/* ---------- Returns the currently loaded list of all street records ---------- */
 function getStreets() {
     return allStreets;
 }
