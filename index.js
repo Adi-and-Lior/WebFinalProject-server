@@ -9,7 +9,6 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -144,7 +143,6 @@ app.get('/api/users', async (_, res) => {
   }
 });
 
-
 // Global variables to store cities and streets data in memory
 let allCities = [];
 let allStreets = [];
@@ -153,20 +151,15 @@ let allStreets = [];
 async function loadAllGeoData() {
     console.log('Server: Starting to load all geo data from data.gov.il...');
     try {
-        // Load cities
         const citiesUrl = 'https://data.gov.il/api/3/action/datastore_search?resource_id=5c78e9fa-c2e2-4771-93ff-7f400a12f7ba&limit=100000'; // Increased limit
         const citiesResponse = await fetch(citiesUrl);
         const citiesData = await citiesResponse.json();
-
         if (!citiesData.success) {
             console.error('Server: Failed to fetch cities from external API.');
             return;
         }
         allCities = citiesData.result.records.map(r => r.שם_ישוב).filter((v, i, a) => a.indexOf(v) === i).sort();
         console.log(`Server: Loaded ${allCities.length} unique cities.`);
-
-        // Load streets (might need to iterate if total is > 32000)
-        // For simplicity, let's assume one fetch is enough for now, or fetch in chunks if needed
         const streetsResourceId = '9ad3862c-8391-4b2f-84a4-2d4c68625f4b';
         const streetsUrl = `https://data.gov.il/api/3/action/datastore_search?resource_id=${streetsResourceId}&limit=100000`; // Increased limit
         const streetsResponse = await fetch(streetsUrl);
@@ -180,7 +173,7 @@ async function loadAllGeoData() {
         allStreets = streetsData.result.records.map(r => ({
             city: r.שם_ישוב,
             street: r.שם_רחוב
-        })).filter(item => item.city && item.street); // Filter out entries with missing city/street
+        })).filter(item => item.city && item.street); 
         console.log(`Server: Loaded ${allStreets.length} street records.`);
 
     } catch (err) {
@@ -191,13 +184,11 @@ async function loadAllGeoData() {
 // Call this function when the server starts
 loadAllGeoData();
 
-
-// נתיב שמחזיר את רשימת הערים בישראל (כעת מזיכרון)
 app.get('/api/cities', async (req, res) => {
     try {
         if (allCities.length === 0) {
             console.warn('Server: Cities data not yet loaded or empty. Attempting to reload...');
-            await loadAllGeoData(); // Try reloading if empty
+            await loadAllGeoData(); 
             if (allCities.length === 0) {
                 return res.status(503).json({ message: 'Cities data not available yet.' });
             }
@@ -209,7 +200,6 @@ app.get('/api/cities', async (req, res) => {
     }
 });
 
-// נתיב שמחזיר את רשימת הרחובות לעיר מסוימת (כעת מזיכרון עם סינון גמיש)
 app.get('/api/streets', async (req, res) => {
     const cityQuery = req.query.city ? req.query.city.trim() : '';
     console.log(`Server: Received request for streets in city: '${cityQuery}'`);
@@ -217,10 +207,9 @@ app.get('/api/streets', async (req, res) => {
     if (!cityQuery) {
         return res.status(400).json({ message: 'נא לספק שם עיר בפרמטר ?city=' });
     }
-
     if (allStreets.length === 0) {
         console.warn('Server: Streets data not yet loaded or empty. Attempting to reload...');
-        await loadAllGeoData(); // Try reloading if empty
+        await loadAllGeoData();
         if (allStreets.length === 0) {
             return res.status(503).json({ message: 'Streets data not available yet.' });
         }
@@ -228,13 +217,10 @@ app.get('/api/streets', async (req, res) => {
 
     try {
         const lowerCaseCityQuery = cityQuery.toLowerCase();
-
-        // Filter streets based on partial, case-insensitive match of the city name
-        // And then extract unique street names
         const filteredStreets = allStreets
             .filter(item => item.city && item.city.toLowerCase().includes(lowerCaseCityQuery))
             .map(item => item.street)
-            .filter((val, i, arr) => val && arr.indexOf(val) === i) // Ensure unique and not null/undefined
+            .filter((val, i, arr) => val && arr.indexOf(val) === i) 
             .sort();
 
         console.log(`Server: Found ${filteredStreets.length} streets for city query '${cityQuery}'.`);
@@ -245,12 +231,10 @@ app.get('/api/streets', async (req, res) => {
     }
 });
 
-
 /* ---------- Reports ---------- */
 app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
   console.log('[Server] req.file:', req.file);
   console.log('[Server] req.body:', req.body);
-
   let location;
   try {
     location = JSON.parse(req.body.locationDetails);
@@ -261,34 +245,26 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
   } catch {
     return res.status(400).json({ message: 'Invalid location details format.' });
   }
-
   let mediaId = null;
   let mediaMimeType = null;
-
   try {
     if (req.file) {
-      // Use promise to await upload finish event
       mediaId = await new Promise((resolve, reject) => {
         const uploadStream = bucket.openUploadStream(req.file.originalname, {
           contentType: req.file.mimetype,
         });
-
         uploadStream.end(req.file.buffer);
-
         uploadStream.on('finish', () => {
           console.log('[Server] File uploaded to GridFS with id:', uploadStream.id);
           resolve(uploadStream.id);
         });
-
         uploadStream.on('error', (err) => {
           console.error('[Server] Error uploading file to GridFS:', err);
           reject(err);
         });
       });
-
       mediaMimeType = req.file.mimetype;
     }
-
     const newReport = await new Report({
       faultType: req.body.faultType,
       faultDescription: req.body.faultDescription,
@@ -299,15 +275,12 @@ app.post('/api/reports', upload.single('mediaFile'), async (req, res) => {
       creatorId: req.body.creatorId,
       status: 'in-progress'
     }).save();
-
-    // החזר מזהי המדיה כמחרוזות כדי שלא יהיו בעיות בקליינט
     res.status(201).json({
       message: 'Report submitted successfully!',
       reportId: newReport._id.toString(),
       mediaGridFSId: mediaId ? mediaId.toString() : null,
       mediaMimeType
     });
-
   } catch (err) {
     console.error('Error saving report:', err.message);
     res.status(500).json({ message: 'Failed to save report.' });
@@ -328,43 +301,34 @@ app.get('/api/reports/:id', async (req, res) => {
   }
 });
 
-// הוסף את זה לקובץ השרת הראשי שלך (server.js), בתוך קטע ה-Reports או בנפרד
-
-app.get('/api/my-reports-locations', async (req, res) => {
-    const creatorId = req.query.creatorId; 
-
+app.get('/api/all-reports-locations', async (req, res) => { 
     try {
-        const query = creatorId ? { creatorId: creatorId } : {}; 
-        
-        const reports = await Report.find(query); 
-
-        const locations = reports.map(report => {
+        const allReports = await Report.find({}, 'location.latitude location.longitude faultType');
+        const locations = allReports.map(report => {
             if (report.location && typeof report.location.latitude === 'number' && typeof report.location.longitude === 'number') {
                 return {
                     lat: report.location.latitude,
                     lng: report.location.longitude,
-                    title: report.faultType || 'דיווח' 
+                    title: report.faultType || 'דיווח' // משתמש ב-faultType כשם הדיווח
                 };
             }
-            return null;
-        }).filter(Boolean); 
-
-        res.json(locations);
+            return null; // אם הדיווח לא תקין, סנן אותו
+        }).filter(Boolean); // מסנן החוצה אובייקטים שהם null
+        res.status(200).json(locations);
     } catch (error) {
-        console.error('שגיאה בשליפת מיקומי דיווחים למפה:', error.message);
-        res.status(500).json({ message: 'שגיאה בשרת בעת שליפת מיקומי דיווחים.' });
+        console.error('שגיאה בשליפת מיקומי כל הדיווחים למפה:', error.message);
+        res.status(500).json({ message: 'שגיאה בשרת בעת שליפת מיקומי כל הדיווחים.' });
     }
 });
+
 
 app.get('/api/google-maps-api-key', (req, res) => {
   // שלח את מפתח ה-API מהמשתנים הסביבתיים
   const apiKey = process.env.Maps_API_KEY;
-
   if (!apiKey) {
     console.error('Google Maps API Key אינו מוגדר במשתני הסביבה!');
     return res.status(500).json({ message: 'מפתח API למפות אינו זמין בשרת.' });
   }
-
   res.json({ apiKey: apiKey });
 });
 
@@ -379,10 +343,8 @@ app.put('/api/reports/:id', async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ message: 'Report not found.' });
-
     if (status !== undefined)          report.status             = status;
     if (municipalityResponse !== undefined) report.municipalityResponse = municipalityResponse;
-
     await report.save();
     res.json({ message: 'Report updated successfully.', report });
   } catch (err) {
@@ -409,10 +371,8 @@ app.get('/api/employee-reports', async (req, res) => {
   try {
     const { city, status } = req.query;
     if (!city) return res.status(400).json({ message: 'Missing employee city.' });
-
     const query = { 'location.city': city };
     if (status && status !== 'all') query.status = status;
-
     const reports = await Report.find(query).sort({ timestamp: -1 });
     res.json(reports);
   } catch (err) {
@@ -425,18 +385,14 @@ app.get('/api/employee-reports', async (req, res) => {
 app.delete('/api/reports/:id', async (req, res) => {
   const reportId = req.params.id;
   const userId = req.query.userId;
-
   try {
     const report = await Report.findById(reportId);
-
     if (!report) {
       return res.status(404).json({ message: 'הדיווח לא נמצא.' });
     }
-
     if (report.creatorId.toString() !== userId) {
       return res.status(403).json({ message: 'אין לך הרשאה למחוק דיווח זה.' });
     }
-
     if (report.media) {
       try {
         const mediaFileId = new mongoose.Types.ObjectId(report.media);
@@ -449,9 +405,7 @@ app.delete('/api/reports/:id', async (req, res) => {
         console.error(`שגיאה במחיקת קובץ מדיה מ-GridFS (${report.media}):`, err);
       }
     }
-
     await Report.findByIdAndDelete(reportId);
-
     res.json({ message: 'הדיווח נמחק בהצלחה.' });
   } catch (err) {
     console.error('שגיאה במחיקת דיווח:', err.message);
@@ -465,19 +419,14 @@ app.delete('/api/reports/:id', async (req, res) => {
 /* ---------- Delete user and their reports ---------- */
 app.delete('/api/users/:id', async (req, res) => {
   const userId = req.params.id;
-
   try {
-    // מחיקת כל הדיווחים של המשתמש
     const deleteReportsResult = await Report.deleteMany({ creatorId: userId });
     console.log(`Deleted ${deleteReportsResult.deletedCount} reports for user ${userId}.`);
-
-    // מחיקת המשתמש עצמו
     const deleteUserResult = await User.findByIdAndDelete(userId);
 
     if (!deleteUserResult) {
       return res.status(404).json({ message: 'המשתמש לא נמצא.' });
     }
-
     res.json({ message: 'החשבון וכל הדיווחים הקשורים נמחקו בהצלחה.' });
   } catch (err) {
     console.error('Error deleting user and their reports:', err.message);
@@ -497,18 +446,13 @@ app.get('/api/media/:fileId', async (req, res) => {
     }
     console.log('[Server] Requested fileId:', req.params.fileId);
     const fileId = new mongoose.Types.ObjectId(req.params.fileId);
-
     const files = await mongoose.connection.db.collection('uploads.files').find({ _id: fileId }).toArray();
-
     if (!files || files.length === 0) {
       return res.status(404).json({ message: 'No file exists.' });
     }
-
     const file = files[0];
-
     res.set('Content-Type', file.contentType);
     res.set('Content-Disposition', `inline; filename="${file.filename}"`);
-
     const downloadStream = bucket.openDownloadStream(fileId);
     console.log('[Server] Found files:', files);
     downloadStream.on('error', (err) => {
@@ -516,9 +460,7 @@ app.get('/api/media/:fileId', async (req, res) => {
       console.error(err.stack);
       res.sendStatus(500);
     });
-
     downloadStream.pipe(res);
-
   } catch (err) {
     console.error('Error fetching file from GridFS:', err.message);
     if (err.name === 'CastError') {
@@ -539,6 +481,28 @@ app.get('/html/:pageName', (req, res) => {
   res.sendFile(filePath, err => {
     if (err) res.status(404).send('Page not found');
   });
+});
+
+app.get('/api/reverse-geocode', async (req, res) => {
+  const { lat, lon } = req.query;
+
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
+      headers: {
+        'User-Agent': 'SafeReportingApp/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'בעיה מהשרת של Nominatim' });
+    }
+
+    const data = await response.json();
+    res.json(data.address);
+  } catch (error) {
+    console.error('שגיאה בשרת:', error);
+    res.status(500).json({ error: 'שגיאה בפענוח מיקום' });
+  }
 });
 
 /* ---------- Start server ---------- */
