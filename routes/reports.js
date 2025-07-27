@@ -3,7 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Report = require('../models/Report'); // ייבוא מודל הדיווח
 const upload = require('../middleware/multerUpload'); // ייבוא Multer
-const { bucket } = require('../config/db'); // ייבוא ה-bucket מחיבור הדאטהבייס
+const { bucket } = require('../config/db'); // ייבוא ה-bucket (שהוא כעת פונקציה) מחיבור הדאטהבייס
 
 /* ---------- Reports ---------- */
 router.post('/reports', upload.single('mediaFile'), async (req, res) => {
@@ -24,7 +24,14 @@ router.post('/reports', upload.single('mediaFile'), async (req, res) => {
   try {
     if (req.file) {
       mediaId = await new Promise((resolve, reject) => {
-        const uploadStream = bucket.openUploadStream(req.file.originalname, {
+        // קריאה לפונקציית ה-bucket כדי לקבל את המופע המאותחל של GridFSBucket
+        const currentBucket = bucket(); // <--- שינוי חשוב: קריאה לפונקציה
+        if (!currentBucket) {
+          console.error('[Server] Error: GridFSBucket is not initialized for upload.');
+          return reject(new Error('GridFSBucket not ready for upload.'));
+        }
+
+        const uploadStream = currentBucket.openUploadStream(req.file.originalname, { // <--- שימוש ב-currentBucket
           contentType: req.file.mimetype,
         });
         uploadStream.end(req.file.buffer);
@@ -75,24 +82,24 @@ router.get('/reports/:id', async (req, res) => {
   }
 });
 
-router.get('/all-reports-locations', async (req, res) => { 
-    try {
-        const allReports = await Report.find({}, 'location.latitude location.longitude faultType');
-        const locations = allReports.map(report => {
-            if (report.location && typeof report.location.latitude === 'number' && typeof report.location.longitude === 'number') {
-                return {
-                    lat: report.location.latitude,
-                    lng: report.location.longitude,
-                    title: report.faultType || 'דיווח' // משתמש ב-faultType כשם הדיווח
-                };
-            }
-            return null; // אם הדיווח לא תקין, סנן אותו
-        }).filter(Boolean); // מסנן החוצה אובייקטים שהם null
-        res.status(200).json(locations);
-    } catch (error) {
-        console.error('שגיאה בשליפת מיקומי כל הדיווחים למפה:', error.message);
-        res.status(500).json({ message: 'שגיאה בשרת בעת שליפת מיקומי כל הדיווחים.' });
-    }
+router.get('/all-reports-locations', async (req, res) => {
+  try {
+    const allReports = await Report.find({}, 'location.latitude location.longitude faultType');
+    const locations = allReports.map(report => {
+      if (report.location && typeof report.location.latitude === 'number' && typeof report.location.longitude === 'number') {
+        return {
+          lat: report.location.latitude,
+          lng: report.location.longitude,
+          title: report.faultType || 'דיווח'
+        };
+      }
+      return null;
+    }).filter(Boolean);
+    res.status(200).json(locations);
+  } catch (error) {
+    console.error('שגיאה בשליפת מיקומי כל הדיווחים למפה:', error.message);
+    res.status(500).json({ message: 'שגיאה בשרת בעת שליפת מיקומי כל הדיווחים.' });
+  }
 });
 
 /* ---------- Update report ---------- */
@@ -105,7 +112,7 @@ router.put('/reports/:id', async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ message: 'Report not found.' });
-    if (status !== undefined)          report.status             = status;
+    if (status !== undefined) report.status = status;
     if (municipalityResponse !== undefined) report.municipalityResponse = municipalityResponse;
     await report.save();
     res.json({ message: 'Report updated successfully.', report });
@@ -179,30 +186,40 @@ router.delete('/reports/:id', async (req, res) => {
 });
 
 
-
 /* ---------- Serve media files from GridFS ---------- */
 router.get('/media/:fileId', async (req, res) => {
   try {
-    if (!bucket) {
-      console.error('GridFSBucket is not initialized yet.');
-      return res.status(500).json({ message: 'Server error: GridFSBucket not ready.' });
+    // קריאה לפונקציית ה-bucket כדי לקבל את המופע המאותחל של GridFSBucket
+    const currentBucket = bucket(); // <--- שינוי חשוב: קריאה לפונקציה
+
+    if (!currentBucket) {
+      console.error('GridFSBucket is not initialized yet during media download.');
+      return res.status(500).json({ message: 'Server error: GridFSBucket not ready for download.' });
     }
+
     console.log('[Server] Requested fileId:', req.params.fileId);
     const fileId = new mongoose.Types.ObjectId(req.params.fileId);
     const files = await mongoose.connection.db.collection('uploads.files').find({ _id: fileId }).toArray();
+
     if (!files || files.length === 0) {
       return res.status(404).json({ message: 'No file exists.' });
     }
+
     const file = files[0];
     res.set('Content-Type', file.contentType);
     res.set('Content-Disposition', `inline; filename="${file.filename}"`);
-    const downloadStream = bucket.openDownloadStream(fileId);
+
+    // שימוש ב-currentBucket (המופע האמיתי של GridFSBucket)
+    const downloadStream = currentBucket.openDownloadStream(fileId); // <--- שימוש ב-currentBucket
+
     console.log('[Server] Found files:', files);
+
     downloadStream.on('error', (err) => {
       console.error('Error streaming file:', err);
       console.error(err.stack);
       res.sendStatus(500);
     });
+
     downloadStream.pipe(res);
   } catch (err) {
     console.error('Error fetching file from GridFS:', err.message);
