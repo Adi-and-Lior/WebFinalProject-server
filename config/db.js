@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-let bucket;
+let bucket = null;
 
 /* ---------- MongoDB ---------- */
 mongoose
@@ -20,5 +20,6 @@ mongoose.connection.once('open', () => {
 ///////////////////////////////////////////////////////////
 module.exports = {
   mongoose, // אם תצטרך גישה לאובייקט mongoose עצמו במקומות אחרים
-  bucket // ייצוא ה-GridFSBucket
+  bucket: () => bucket, // <--- שנה ל-getter function
+  mongooseConnection: mongoose.connection // <--- זה בסדר גמור
 };
