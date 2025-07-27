@@ -29,9 +29,12 @@ router.get('/streets', async (req, res) => {
             console.error('Server: Streets data is empty. Initial load might have failed.');
             return res.status(500).json({ message: 'נתוני רחובות אינם זמינים בשרת. ייתכן שיש בעיה בטעינה ראשונית.' });
         }
+
         const lowerCaseCityQuery = cityQuery.toLowerCase();
+        
+        // השינוי העיקרי כאן: מ- '===' ל- '.includes()'
         const filteredStreets = allStreetsData
-            .filter(item => item.city && item.city.toLowerCase() === lowerCaseCityQuery) 
+            .filter(item => item.city && item.city.toLowerCase().includes(lowerCaseCityQuery)) 
             .map(item => item.street)
             .filter((val, i, arr) => val && arr.indexOf(val) === i) 
             .sort();
@@ -70,7 +73,7 @@ router.get('/reverse-geocode', async (req, res) => {
       const data = await response.json();
       res.json(data.address);
     } catch (error) {
-      console.error('שגיאה בשרת Nominatim:', error); // שינוי ללוג מפורט יותר
+      console.error('שגיאה בשרת Nominatim:', error); 
       res.status(500).json({ error: 'שגיאה בפענוח מיקום' });
     }
 });
