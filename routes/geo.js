@@ -58,6 +58,12 @@ router.get('/google-maps-api-key', (req, res) => {
 /* ---------- Handles reverse geocoding requests using Nominatim ---------- */
 router.get('/reverse-geocode', async (req, res) => {
     const { lat, lon } = req.query;
+    const parsedLat = parseFloat(lat);
+    const parsedLon = parseFloat(lon);
+    if (isNaN(parsedLat) || isNaN(parsedLon)) {
+        console.error(`[SERVER ERROR] Invalid lat/lon received for reverse-geocode: lat=${lat}, lon=${lon}`);
+        return res.status(400).json({ error: 'Latitude ו-Longitude חייבים להיות מספרים חוקיים.' });
+    }
     try {
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
         headers: {
