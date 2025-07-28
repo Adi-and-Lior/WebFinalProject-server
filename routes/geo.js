@@ -84,4 +84,43 @@ router.get('/reverse-geocode', async (req, res) => {
     }
 });
 
+/* ---------- NEW: Google Geocoding API Proxy ---------- */
+router.get('/geocode', async (req, res) => {
+    const apiKey = process.env.Maps_API_KEY;
+    if (!apiKey) {
+      console.error('Google Maps API Key אינו מוגדר במשתני הסביבה!');
+      return res.status(500).json({ error: 'מפתח API למפות אינו זמין בשרת.' });
+    }
+
+    const { latlng, address } = req.query;
+
+    if (!latlng && !address) {
+      return res.status(400).json({ error: 'יש לספק פרמטר latlng או address.' });
+    }
+
+    let googleUrl = 'https://maps.googleapis.com/maps/api/geocode/json?';
+
+    if (latlng) {
+      googleUrl += `latlng=${encodeURIComponent(latlng)}`;
+    } else if (address) {
+      googleUrl += `address=${encodeURIComponent(address)}`;
+    }
+
+    googleUrl += `&key=${apiKey}`;
+
+    try {
+      const response = await fetch(googleUrl);
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`Google Geocoding API returned error: ${response.status} - ${errText}`);
+        return res.status(response.status).json({ error: 'שגיאה בקריאת Google Geocoding API' });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching Google Geocoding API:', error);
+      res.status(500).json({ error: 'שגיאה בשרת בעת פנייה ל-Google Geocoding API' });
+    }
+});
+
 module.exports = router;
