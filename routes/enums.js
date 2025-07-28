@@ -19,7 +19,7 @@ router.get('/fault-types', async (req, res) => {
 
 // ------------------------------------
 // נקודת קצה: GET /api/location-options
-router.get('/location-options', async (req, res) => {
+router.get('/location-modes', async (req, res) => {
   try {
     const options = await LocationOption.find();
     res.json(options);
@@ -31,7 +31,7 @@ router.get('/location-options', async (req, res) => {
 
 // ------------------------------------
 // נקודת קצה: GET /api/upload-options
-router.get('/upload-options', async (req, res) => {
+router.get('/media-options', async (req, res) => {
   try {
     const options = await UploadOption.find();
     res.json(options);
