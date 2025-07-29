@@ -34,7 +34,7 @@ router.post('/register', async (req, res) => {
         // בדיקה אם המשתמש כבר קיים
         const existingUser = await User.findOne({ username });
         if (existingUser) {
-            return res.status(409).json({ message: 'המשתמש כבר קיים.' });
+            return res.status(409).json({ message: 'שם המשתמש כבר קיים.' });
         }
 
         // הצפנת סיסמה
@@ -48,15 +48,14 @@ router.post('/register', async (req, res) => {
 
         // אם מדובר בעובד, נוסיף עיר לפי קוד גישה
         if (userType === 'employee') {
-            const cities = getCities(); // טוען את הערים מהזיכרון
-            const matchedCity = cities.find(city => city.authCode === employeeAuthCode);
+    const cities = getCities(); // טוען את הערים מהזיכרון
+    const matchedCity = cities.find(city => city === employeeAuthCode); // מחפש לפי שם העיר
+    if (!matchedCity) {
+        return res.status(403).json({ message: 'קוד אימות עובד שגוי.' });
+    }
 
-            if (!matchedCity) {
-                return res.status(403).json({ message: 'קוד גישה לא חוקי לעובד. לא נמצאה עיר מתאימה.' });
-            }
-
-            newUser.city = matchedCity.name; // נניח ששם העיר נמצא תחת name
-        }
+    newUser.city = matchedCity; // שומר את שם העיר
+}
 
         await newUser.save();
         res.status(201).json({ message: 'המשתמש נרשם בהצלחה.' });
