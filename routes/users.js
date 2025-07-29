@@ -23,6 +23,8 @@ router.get('/users', async (_, res) => {
 
 router.post('/register', async (req, res) => {
     try {
+        console.log('🔹 בקשת POST להרשמה התקבלה');
+        console.log('📦 נתונים שהתקבלו מהלקוח:', req.body);
         const { username, password, role, employeeAuthCode } = req.body;
 
         if (!username || !password || !role) {
