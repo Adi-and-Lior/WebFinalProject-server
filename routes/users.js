@@ -51,7 +51,7 @@ router.post('/register', async (req, res) => {
         return res.status(403).json({ message: 'קוד אימות עובד שגוי.' });
     }
 
-    newUser.city = matchedCity;
+    newUser.city = matchedCity.trim();
 }
 
         await newUser.save();
