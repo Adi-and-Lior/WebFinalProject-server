@@ -24,7 +24,7 @@ router.post('/register', async (req, res) => {
     try {
         console.log('🔹 בקשת POST להרשמה התקבלה');
         console.log('📦 נתונים שהתקבלו מהלקוח:', req.body);
-        const { username, password, userType, employeeAuthCode } = req.body;
+        const { username, password, userType, city: employeeAuthCode } = req.body;
 
         if (!username || !password || !userType) {
             return res.status(400).json({ message: 'חסרים פרטים בהרשמה.' });
