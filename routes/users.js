@@ -3,8 +3,7 @@ const bcrypt = require('bcrypt');
 const router = express.Router();
 const User = require('../models/User');
 const Report = require('../models/Report'); 
-const { getCities } = require('./geo');
-
+const { getCities } = require('../utils/geoDataHelper');
 /* ---------- Handles requests to get a list of all users ---------- */
 router.get('/users', async (_, res) => {
   try {
