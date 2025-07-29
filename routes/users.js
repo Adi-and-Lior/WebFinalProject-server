@@ -48,6 +48,8 @@ router.post('/register', async (req, res) => {
         // אם מדובר בעובד, נוסיף עיר לפי קוד גישה
         if (userType === 'employee') {
     const cities = getCities(); // טוען את הערים מהזיכרון
+    console.log("🔍 רשימת ערים:", cities);
+    console.log("🆔 קוד עיר מהעובד:", employeeAuthCode);
     const matchedCity = cities.find(city => city === employeeAuthCode); // מחפש לפי שם העיר
     if (!matchedCity) {
         return res.status(403).json({ message: 'קוד אימות עובד שגוי.' });
