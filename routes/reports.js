@@ -84,13 +84,14 @@ router.get('/reports/:id', async (req, res) => {
 /* ---------- Retrieves location data for all reports to display on a map ---------- */
 router.get('/all-reports-locations', async (req, res) => {
   try {
-    const allReports = await Report.find({}, 'location.latitude location.longitude faultType');
+    const allReports = await Report.find({}, 'location.latitude location.longitude faultType status');
     const locations = allReports.map(report => {
       if (report.location && typeof report.location.latitude === 'number' && typeof report.location.longitude === 'number') {
         return {
           lat: report.location.latitude,
           lng: report.location.longitude,
-          title: report.faultType || 'דיווח'
+          title: report.faultType || 'דיווח',
+          status: report.status 
         };
       }
       return null;
@@ -101,6 +102,7 @@ router.get('/all-reports-locations', async (req, res) => {
     res.status(500).json({ message: 'שגיאה בשרת בעת שליפת מיקומי כל הדיווחים.' });
   }
 });
+
 
 /* ---------- Handles updates to an existing report's status or municipality response ---------- */
 router.put('/reports/:id', async (req, res) => {
