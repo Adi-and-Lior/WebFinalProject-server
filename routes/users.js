@@ -44,21 +44,14 @@ router.post('/register', async (req, res) => {
             password: hashedPassword,
             userType
         });
-
-        // אם מדובר בעובד, נוסיף עיר לפי קוד גישה
         if (userType === 'employee') {
-    const cities = getCities(); // טוען את הערים מהזיכרון
-    console.log("🔍 רשימת ערים:", cities);
-    console.log("🆔 קוד עיר מהעובד:", employeeAuthCode);
-    console.log("employeeAuthCode:", `"${employeeAuthCode}"`);
-    cities.forEach(city => console.log(`Comparing with city: "${city}"`));
-
-    const matchedCity = cities.find(city => city === employeeAuthCode); // מחפש לפי שם העיר
+    const cities = getCities();
+    const matchedCity = cities.find(city => city.trim() === employeeAuthCode.trim()); 
     if (!matchedCity) {
         return res.status(403).json({ message: 'קוד אימות עובד שגוי.' });
     }
 
-    newUser.city = matchedCity; // שומר את שם העיר
+    newUser.city = matchedCity;
 }
 
         await newUser.save();
