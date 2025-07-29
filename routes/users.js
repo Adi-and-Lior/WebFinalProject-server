@@ -25,9 +25,9 @@ router.post('/register', async (req, res) => {
     try {
         console.log('🔹 בקשת POST להרשמה התקבלה');
         console.log('📦 נתונים שהתקבלו מהלקוח:', req.body);
-        const { username, password, role, employeeAuthCode } = req.body;
+        const { username, password, userType, employeeAuthCode } = req.body;
 
-        if (!username || !password || !role) {
+        if (!username || !password || !userType) {
             return res.status(400).json({ message: 'חסרים פרטים בהרשמה.' });
         }
 
@@ -43,11 +43,11 @@ router.post('/register', async (req, res) => {
         const newUser = new User({
             username,
             password: hashedPassword,
-            role
+            userType
         });
 
         // אם מדובר בעובד, נוסיף עיר לפי קוד גישה
-        if (role === 'employee') {
+        if (userType === 'employee') {
             const cities = getCities(); // טוען את הערים מהזיכרון
             const matchedCity = cities.find(city => city.authCode === employeeAuthCode);
 
