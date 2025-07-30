@@ -1,0 +1,25 @@
+# קבצי סביבה מקומיים - חשוב לא לכלול ב-Git!
+.env
+
+# תיקיות מודולי Node.js
+node_modules/
+
+# קבצי לוג
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# קבצי מערכת (macOS)
+.DS_Store
+
+# קבצי עורך טקסט נפוצים
+*.sublime-project
+*.sublime-workspace
+.vscode/
+
+# תיקיות וקבצים זמניים/בינאריים
+/build/
+/dist/
+/tmp/
+*.swp

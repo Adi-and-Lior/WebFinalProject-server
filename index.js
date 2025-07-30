@@ -51,22 +51,6 @@ app.use('/api', reportRoutes);
 app.use('/api', geoRoutes);
 app.use('/api', enumsRoutes); 
 
-// Serves static files (HTML, CSS, JS, images) from the 'client' directory.
-app.use(express.static(path.join(__dirname, '..', 'client')));
-
-// Serves the main 'index.html' file when accessing the root URL.
-app.get('/', (_, res) =>
-  res.sendFile(path.join(__dirname, '..', 'client', 'index.html'))
-);
-
-// Serves HTML pages from the 'client/html' directory based on the page name in the URL.
-app.get('/html/:pageName', (req, res) => {
-  const filePath = path.join(__dirname, '..', 'client', 'html', req.params.pageName);
-  res.sendFile(filePath, err => {
-    if (err) res.status(404).send('Page not found');
-  });
-});
-
 /* ---------- Start server ---------- */
 // Starts the Express server after MongoDB connection and GridFSBucket are initialized.
 mongooseConnection.once('open', () => { 
