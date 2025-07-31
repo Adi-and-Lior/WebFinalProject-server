@@ -50,17 +50,17 @@ router.post('/register', async (req, res) => {
             const cities = getCities();
             const matchedCity = cities.find(city => city.trim() === employeeAuthCode.trim()); 
             if (!matchedCity) {
-                return res.status(403).json({ message: 'Invalid employee authorization code.' });
+                return res.status(403).json({ message: 'קוד משתמש לא תקין.' });
             }
             newUser.city = matchedCity.trim();
         }
 
         await newUser.save();
-        res.status(201).json({ message: 'User registered successfully.' });
+        res.status(201).json({ message: 'הרשמת משתמש הצליחה.' });
 
     } catch (err) {
         console.error('Error during registration:', err.message);  /* ---------- Professional error log for registration failure ---------- */
-        res.status(500).json({ message: 'Server error during registration.' });
+        res.status(500).json({ message: 'שגיאת שרת במהלך ההרשמה.' });
     }
 });
 
