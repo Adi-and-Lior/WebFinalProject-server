@@ -4,6 +4,7 @@ const router = express.Router();
 const User = require('../models/User');
 const Report = require('../models/Report'); 
 const { getCities } = require('../utils/geoDataHelper');
+
 /* ---------- Handles requests to get a list of all users ---------- */
 router.get('/users', async (_, res) => {
   try {
@@ -15,28 +16,29 @@ router.get('/users', async (_, res) => {
       city: u.city
     })));
   } catch (err) {
-    console.error('Error fetching users:', err.message);
+    console.error('Error fetching users:', err.message);  /* ---------- Professional log for failure to fetch users ---------- */
     res.status(500).json({ message: 'Failed to load users.' });
   }
 });
 
+/* ---------- Handles user registration requests ---------- */
 router.post('/register', async (req, res) => {
     try {
-        console.log('🔹 בקשת POST להרשמה התקבלה');
-        console.log('📦 נתונים שהתקבלו מהלקוח:', req.body);
+        console.log('🔹 Received POST request for user registration');  /* ---------- Clear log indicating registration request ---------- */
+        console.log('📦 Received data:', req.body);
         const { username, password, userType, city: employeeAuthCode } = req.body;
 
         if (!username || !password || !userType) {
-            return res.status(400).json({ message: 'חסרים פרטים בהרשמה.' });
+            return res.status(400).json({ message: 'Missing registration details.' });
         }
 
-        // בדיקה אם המשתמש כבר קיים
+        // Check if user already exists
         const existingUser = await User.findOne({ username });
         if (existingUser) {
-            return res.status(409).json({ message: 'שם המשתמש כבר קיים.' });
+            return res.status(409).json({ message: 'Username already exists.' });
         }
 
-        // הצפנת סיסמה
+        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const newUser = new User({
@@ -45,21 +47,20 @@ router.post('/register', async (req, res) => {
             userType
         });
         if (userType === 'employee') {
-    const cities = getCities();
-    const matchedCity = cities.find(city => city.trim() === employeeAuthCode.trim()); 
-    if (!matchedCity) {
-        return res.status(403).json({ message: 'קוד אימות עובד שגוי.' });
-    }
-
-    newUser.city = matchedCity.trim();
-}
+            const cities = getCities();
+            const matchedCity = cities.find(city => city.trim() === employeeAuthCode.trim()); 
+            if (!matchedCity) {
+                return res.status(403).json({ message: 'Invalid employee authorization code.' });
+            }
+            newUser.city = matchedCity.trim();
+        }
 
         await newUser.save();
-        res.status(201).json({ message: 'המשתמש נרשם בהצלחה.' });
+        res.status(201).json({ message: 'User registered successfully.' });
 
     } catch (err) {
-        console.error('שגיאה בהרשמה:', err.message);
-        res.status(500).json({ message: 'שגיאה בשרת בהרשמה.' });
+        console.error('Error during registration:', err.message);  /* ---------- Professional error log for registration failure ---------- */
+        res.status(500).json({ message: 'Server error during registration.' });
     }
 });
 
@@ -68,18 +69,18 @@ router.delete('/users/:id', async (req, res) => {
   const userId = req.params.id;
   try {
     const deleteReportsResult = await Report.deleteMany({ creatorId: userId });
-    console.log(`Deleted ${deleteReportsResult.deletedCount} reports for user ${userId}.`);
+    console.log(`Deleted ${deleteReportsResult.deletedCount} reports for user ${userId}.`);  /* ---------- Logs number of deleted reports for traceability ---------- */
     const deleteUserResult = await User.findByIdAndDelete(userId);
     if (!deleteUserResult) {
-      return res.status(404).json({ message: 'המשתמש לא נמצא.' });
+      return res.status(404).json({ message: 'User not found.' });
     }
-    res.json({ message: 'החשבון וכל הדיווחים הקשורים נמחקו בהצלחה.' });
+    res.json({ message: 'User account and related reports deleted successfully.' });
   } catch (err) {
-    console.error('Error deleting user and their reports:', err.message);
+    console.error('Error deleting user and their reports:', err.message);  /* ---------- Professional error log for deletion failure ---------- */
     if (err.name === 'CastError') {
-      return res.status(400).json({ message: 'מזהה משתמש לא תקין.' });
+      return res.status(400).json({ message: 'Invalid user ID format.' });
     }
-    res.status(500).json({ message: 'שגיאה בשרת בעת מחיקת החשבון.' });
+    res.status(500).json({ message: 'Server error during account deletion.' });
   }
 });
 

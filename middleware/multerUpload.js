@@ -1,9 +1,11 @@
+/* ---------- Import Multer library for handling multipart/form-data ---------- */
 const multer = require('multer');
 
-/* ---------- Configures storage for Multer to keep files in memory as Buffers ---------- */
+/* ---------- Configure Multer to store uploaded files in memory as Buffer objects ---------- */
 const storage = multer.memoryStorage();
 
-/* ---------- Initializes Multer with the configured memory storage ---------- */
+/* ---------- Initialize Multer middleware with memory storage ---------- */
 const upload = multer({ storage });
 
+/* ---------- Export the configured Multer upload middleware ---------- */
 module.exports = upload;

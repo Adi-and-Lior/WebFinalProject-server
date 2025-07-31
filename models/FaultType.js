@@ -1,21 +1,20 @@
-// server/models/FaultType.js  (קובץ חדש)
-
+/* ---------- Import Mongoose library to define a schema ---------- */
 const mongoose = require('mongoose');
 
-// הגדרת הסכמה (Schema) שמגדירה איך ייראה אובייקט "FaultType" בדאטה בייס
+/* ---------- Define the schema for fault types ---------- */
 const faultTypeSchema = new mongoose.Schema({
     value: {
         type: String,
-        required: true, // השדה הזה חייב להיות קיים
-        unique: true   // הערך של השדה הזה חייב להיות ייחודי
+        required: true,    // Must be provided
+        unique: true       // Must be unique across the collection
     },
     label: {
         type: String,
-        required: true  // השדה הזה חייב להיות קיים
+        required: true     // Human-readable label (e.g., for UI display)
     }
 }, {
-    timestamps: true // Mongoose יוסיף אוטומטית שדות createdAt ו-updatedAt
+    timestamps: true       // Automatically adds createdAt and updatedAt fields
 });
 
-// יצירת המודל מתוך הסכמה וייצואו לשימוש בקבצים אחרים
+/* ---------- Export the FaultType model based on the schema ---------- */
 module.exports = mongoose.model('FaultType', faultTypeSchema);
