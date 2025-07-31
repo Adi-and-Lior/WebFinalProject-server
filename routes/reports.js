@@ -6,106 +6,64 @@ const upload = require('../middleware/multerUpload');
 const { bucket } = require('../config/db'); 
 
 /* ---------- Handles the creation of a new report, including optional media file upload to GridFS ---------- */
-// routes/reports.js (או הקובץ שבו נמצא הראוטר הזה)
-
-// וודא ש Multer וה-GridFsStorage מוגדרים כאן לפני הראוטר
-// לדוגמה:
-const multer = require('multer');
-const { GridFsStorage } = require('multer-gridfs-storage');
-const Report = require('../models/Report'); // וודא שזה הנתיב הנכון למודל הדיווח שלך
-const { bucket } = require('../config/db'); // <--- וודא שאתה מייבא את bucket מ-config/db.js
-
-// ----------------------------------------------------------------------
-// קטע קוד זה חייב להיות קיים בראש הקובץ (לפני הראוטר)
-// הוא מגדיר את Multer להשתמש ב-GridFSStorage.
-// אם כבר יש לך את זה, אל תדביק שוב, רק וודא שזה נכון.
-const storage = new GridFsStorage({
-    url: process.env.MONGO_URI, // וודא ש-MONGO_URI נכון
-    file: (req, file) => {
-        return {
-            filename: file.originalname,
-            bucketName: 'uploads' // שם הבאקט
-        };
-    }
-});
-
-const upload = multer({ storage }); // Multer משתמש באחסון GridFS
-// ----------------------------------------------------------------------
-
-
 router.post('/reports', upload.single('mediaFile'), async (req, res) => {
-    // לוגים לבדיקה
-    console.log('[Server] req.file (after Multer-GridFS):', req.file); // זה אמור להכיל את ה-ID
-    console.log('[Server] req.body:', req.body);
-
-    let location;
-    try {
-        location = JSON.parse(req.body.locationDetails);
-        console.log('[Server] Parsed location:', location);
-        if (!location.city) {
-            return res.status(400).json({ message: 'Location details must include a city.' });
-        }
-    } catch (parseError) { // עדיף לתפוס את השגיאה כמשתנה
-        console.error('[Server] Error parsing location details:', parseError);
-        return res.status(400).json({ message: 'Invalid location details format.' });
+  console.log('[Server] req.file:', req.file);
+  console.log('[Server] req.body:', req.body);
+  let location;
+  try {
+    location = JSON.parse(req.body.locationDetails);
+    console.log('[Server] Parsed location:', location);
+    if (!location.city) {
+      return res.status(400).json({ message: 'Location details must include a city.' });
     }
-
-    let mediaId = null;
-    let mediaMimeType = null;
-
-    // ---------------------------------------------------------------------------------
-    // זהו הקטע שאתה צריך לשנות / להחליף לחלוטין.
-    // אם Multer עם GridFsStorage עובד כראוי, ה-ID כבר ב-req.file.id
-    // ---------------------------------------------------------------------------------
+  } catch {
+    return res.status(400).json({ message: 'Invalid location details format.' });
+  }
+  let mediaId = null;
+  let mediaMimeType = null;
+  try {
     if (req.file) {
-        mediaId = req.file.id; // <--- קריטי: קח את ה-ID ישירות מ-req.file.id
-        mediaMimeType = req.file.mimetype;
-        console.log('[Server] Media ID retrieved from req.file.id:', mediaId);
-    }
-    // ---------------------------------------------------------------------------------
-    // כל בלוק ה-Promise עם currentBucket.openUploadStream צריך להימחק לחלוטין!
-    // כלומר, למחוק מ:
-    // mediaId = await new Promise((resolve, reject) => {
-    //   const currentBucket = bucket();
-    //   ...
-    //   });
-    // ועד השורה שמסיימת את ה-Promise.
-    // ---------------------------------------------------------------------------------
-
-    try {
-        const newReport = await new Report({
-            faultType: req.body.faultType,
-            faultDescription: req.body.faultDescription,
-            location,
-            media: mediaId, // שדה זה ישמור את ה-ObjectID של הקובץ ב-GridFS
-            mediaMimeType,
-            createdBy: req.body.createdBy,
-            creatorId: req.body.creatorId,
-            status: 'in-progress'
-        }).save();
-
-        res.status(201).json({
-            message: 'Report submitted successfully!',
-            reportId: newReport._id.toString(),
-            mediaId: mediaId ? mediaId.toString() : null, // <--- וודא שאתה שולח mediaId ולא mediaGridFSId
-            mediaMimeType: mediaMimeType
-        });
-
-    } catch (err) {
-        console.error('Error saving report:', err.message);
-        // טיפול בהסרת קובץ "יתום" אם שמירת הדיווח נכשלה
-        // וודא ש-bucket מוגדר ונגיש כאן (מהייבוא למעלה)
-        if (mediaId && bucket) { 
-            try {
-                // ה-ID מ-req.file.id הוא כבר ObjectID, אז delete אמור לעבוד
-                await bucket.delete(mediaId); 
-                console.log(`[Server] Deleted orphaned file ${mediaId} from GridFS.`);
-            } catch (deleteErr) {
-                console.error(`[Server] Error deleting orphaned file ${mediaId}:`, deleteErr);
-            }
+      mediaId = await new Promise((resolve, reject) => {
+        const currentBucket = bucket(); 
+        if (!currentBucket) {
+          console.error('[Server] Error: GridFSBucket is not initialized for upload.');
+          return reject(new Error('GridFSBucket not ready for upload.'));
         }
-        res.status(500).json({ message: 'Failed to save report.' });
+        const uploadStream = currentBucket.openUploadStream(req.file.originalname, { 
+          contentType: req.file.mimetype,
+        });
+        uploadStream.end(req.file.buffer);
+        uploadStream.on('finish', () => {
+          console.log('[Server] File uploaded to GridFS with id:', uploadStream.id);
+          resolve(uploadStream.id);
+        });
+        uploadStream.on('error', (err) => {
+          console.error('[Server] Error uploading file to GridFS:', err);
+          reject(err);
+        });
+      });
+      mediaMimeType = req.file.mimetype;
     }
+    const newReport = await new Report({
+      faultType: req.body.faultType,
+      faultDescription: req.body.faultDescription,
+      location,
+      media: mediaId,
+      mediaMimeType,
+      createdBy: req.body.createdBy,
+      creatorId: req.body.creatorId,
+      status: 'in-progress'
+    }).save();
+    res.status(201).json({
+      message: 'Report submitted successfully!',
+      reportId: newReport._id.toString(),
+      mediaGridFSId: mediaId ? mediaId.toString() : null,
+      mediaMimeType
+    });
+  } catch (err) {
+    console.error('Error saving report:', err.message);
+    res.status(500).json({ message: 'Failed to save report.' });
+  }
 });
 
 /* ---------- Retrieves a single report by its ID ---------- */
